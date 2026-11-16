@@ -42,7 +42,7 @@ func (tv *TVDecoder) Decode(v any) error {
 
 	a, ok := v.(*SPDX)
 	if !ok {
-		return xerrors.Errorf("invalid struct type tag-value decoder needed SPDX struct")
+		return xerrors.Errorf("invalid struct type: tag-value decoder requires SPDX struct")
 	}
 	if err = a.unmarshal(spdxDocument); err != nil {
 		return xerrors.Errorf("failed to unmarshal spdx: %w", err)
@@ -108,9 +108,12 @@ func (s *SPDX) unmarshal(spdxDocument *spdx.Document) error {
 
 // parseFiles parses Relationships and finds filepaths for packages
 func (s *SPDX) parseFiles(spdxDocument *spdx.Document) {
-	fileSPDXIdentifierMap := lo.SliceToMap(spdxDocument.Files, func(file *spdx.File) (common.ElementID, *spdx.File) {
-		return file.FileSPDXIdentifier, file
-	})
+	// A null element in the files array decodes to a nil pointer.
+	fileSPDXIdentifierMap := lo.SliceToMap(
+		lo.Filter(spdxDocument.Files, func(file *spdx.File, _ int) bool { return file != nil }),
+		func(file *spdx.File) (common.ElementID, *spdx.File) {
+			return file.FileSPDXIdentifier, file
+		})
 
 	for _, rel := range spdxDocument.Relationships {
 		if rel.Relationship != common.TypeRelationshipContains && rel.Relationship != "CONTAIN" {
@@ -150,6 +153,10 @@ func (s *SPDX) parsePackages(spdxDocument *spdx.Document) (map[common.ElementID]
 	// Convert packages into components
 	components := make(map[common.ElementID]*core.Component)
 	for _, pkg := range spdxDocument.Packages {
+		// A null element in the packages array decodes to a nil pointer.
+		if pkg == nil {
+			continue
+		}
 		component, err := s.parsePackage(*pkg)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to parse package: %w", err)
@@ -246,11 +253,11 @@ func (s *SPDX) parsePackage(spdxPkg spdx.Package) (*core.Component, error) {
 	return component, nil
 }
 
-func (s *SPDX) unmarshalChecksums(checksums []spdx.Checksum) []digest.Digest {
+func (s *SPDX) unmarshalChecksums(checksums []spdx.Checksum) []digest.SourcedDigest {
 	if checksums == nil {
 		return nil
 	}
-	var digests []digest.Digest
+	var digests []digest.SourcedDigest
 	for _, h := range checksums {
 		var alg digest.Algorithm
 		switch h.Algorithm {
@@ -266,7 +273,10 @@ func (s *SPDX) unmarshalChecksums(checksums []spdx.Checksum) []digest.Digest {
 			log.Warn("Unsupported hash algorithm", log.String("algorithm", string(h.Algorithm)))
 			continue
 		}
-		digests = append(digests, digest.NewDigestFromString(alg, h.Value))
+		digests = append(digests, digest.SourcedDigest{
+			Digest: digest.NewDigestFromString(alg, h.Value),
+			Source: digest.SourceSBOM,
+		})
 	}
 	return digests
 }

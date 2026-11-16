@@ -2,7 +2,9 @@ package types
 
 import (
 	"cmp"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -71,7 +73,9 @@ func (o *OS) Merge(newOS OS) {
 		if o.Family == "" {
 			o.Family = newOS.Family
 		}
-		if o.Name == "" {
+		// One of the sources may report a shortened version, e.g. 7 and 7.9.2009 for CentOS.
+		// We always take the fullest version.
+		if o.Name == "" || (o.Family == newOS.Family && strings.HasPrefix(newOS.Name, o.Name+".")) {
 			o.Name = newOS.Name
 		}
 		// Ubuntu has ESM program: https://ubuntu.com/security/esm
@@ -226,7 +230,7 @@ type ArtifactDetail struct {
 	Misconfigurations []Misconfiguration `json:",omitempty"`
 	Secrets           Secrets            `json:",omitempty"`
 	Licenses          LicenseFiles       `json:",omitempty"`
-	CryptoAssets      []CryptoAsset      `json:",omitempty"`
+	CryptoAssets      CryptoAssets       `json:",omitempty"`
 
 	// ImageConfig has information from container image config
 	ImageConfig ImageConfigDetail
@@ -244,6 +248,7 @@ func (a *ArtifactDetail) Sort() {
 	sort.Sort(a.Applications)
 	sort.Sort(a.Secrets)
 	sort.Sort(a.Licenses)
+	slices.SortStableFunc(a.CryptoAssets, CompareCryptoAssets)
 	// Misconfigurations will be sorted later
 }
 

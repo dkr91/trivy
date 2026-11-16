@@ -89,6 +89,52 @@ func Test_Attribute_AsMapValue(t *testing.T) {
 	}
 }
 
+func Test_Attribute_AsStringValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		expr     string
+		expected []string
+	}{
+		{
+			name:     "strings",
+			expr:     `["80", "9090-9095"]`,
+			expected: []string{"80", "9090-9095"},
+		},
+		{
+			name:     "numbers",
+			expr:     `[80, 8080]`,
+			expected: []string{"80", "8080"},
+		},
+		{
+			name:     "number in exponent notation",
+			expr:     `[1e3]`,
+			expected: []string{"1000"},
+		},
+		{
+			name:     "numbers mixed with strings",
+			expr:     `[80, "9090-9095"]`,
+			expected: []string{"80", "9090-9095"},
+		},
+		{
+			name:     "bools",
+			expr:     `[true, false]`,
+			expected: []string{"true", "false"},
+		},
+		{
+			name:     "value that has no string representation",
+			expr:     `[["80"]]`,
+			expected: []string{""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attr := newTestAttribute(t, tt.expr, nil)
+			assert.Equal(t, tt.expected, attr.AsStringValues().AsStrings())
+		})
+	}
+}
+
 func Test_Attribute_Marks(t *testing.T) {
 	val := cty.StringVal("secret").Mark("sensitive")
 	attr := newTestAttribute(t, "val", map[string]cty.Value{"val": val})
@@ -245,6 +291,184 @@ func Test_AllReferences_JSON(t *testing.T) {
 			}
 
 			require.ElementsMatch(t, tt.expected, humanRefs)
+		})
+	}
+}
+
+func Test_Attribute_Contains(t *testing.T) {
+	const asgTags = `[
+	{
+		"key"                 = "Name"
+		"propagate_at_launch" = "true"
+		"value"               = "couchbase-seb-develop-dev"
+	},
+	{
+		"key"                 = "app"
+		"propagate_at_launch" = "true"
+		"value"               = "myapp"
+	}
+]`
+
+	tests := []struct {
+		name       string
+		expr       string
+		value      string
+		ignoreCase bool
+		expected   bool
+	}{
+		{
+			name:     "substring of a string",
+			expr:     `"bucketName"`,
+			value:    "etNa",
+			expected: true,
+		},
+		{
+			name:     "string without the value",
+			expr:     `"public-read"`,
+			value:    "private",
+			expected: false,
+		},
+		{
+			name:     "key of a map",
+			expr:     `{ Department = "Finance" }`,
+			value:    "Department",
+			expected: true,
+		},
+		{
+			name:     "element of a list",
+			expr:     `["10.0.0.0/16", "172.0.0.0/8"]`,
+			value:    "172.0.0.0/8",
+			expected: true,
+		},
+		{
+			name:     "value in a list of maps",
+			expr:     asgTags,
+			value:    "Name",
+			expected: true,
+		},
+		{
+			name:     "value in the second map of a list",
+			expr:     asgTags,
+			value:    "app",
+			expected: true,
+		},
+		{
+			name:     "value missing from a list of maps",
+			expr:     asgTags,
+			value:    "NotThere",
+			expected: false,
+		},
+		{
+			name:       "element of a list with a different case",
+			expr:       `["Foo", "Bar"]`,
+			value:      "foo",
+			ignoreCase: true,
+			expected:   true,
+		},
+		{
+			name:     "element of a list with a different case and no option",
+			expr:     `["Foo", "Bar"]`,
+			value:    "foo",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attr := newTestAttribute(t, tt.expr, nil)
+			if tt.ignoreCase {
+				assert.Equal(t, tt.expected, attr.Contains(tt.value, IgnoreCase))
+			} else {
+				assert.Equal(t, tt.expected, attr.Contains(tt.value))
+			}
+		})
+	}
+}
+
+func Test_Attribute_IsEmpty(t *testing.T) {
+	tests := []struct {
+		name     string
+		expr     string
+		expected bool
+	}{
+		{
+			name:     "string with a value",
+			expr:     `"public-read"`,
+			expected: false,
+		},
+		{
+			name:     "empty string",
+			expr:     `""`,
+			expected: true,
+		},
+		{
+			name:     "map with a key",
+			expr:     `{ Department = "Finance" }`,
+			expected: false,
+		},
+		{
+			name:     "empty map",
+			expr:     `{}`,
+			expected: true,
+		},
+		{
+			name:     "list with an element",
+			expr:     `["0.0.0.0/0"]`,
+			expected: false,
+		},
+		{
+			name:     "empty list",
+			expr:     `[]`,
+			expected: true,
+		},
+		{
+			name:     "zero number",
+			expr:     `0`,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, newTestAttribute(t, tt.expr, nil).IsEmpty())
+		})
+	}
+}
+
+func Test_Attribute_IsTrueAndIsFalse(t *testing.T) {
+	tests := []struct {
+		name    string
+		expr    string
+		isTrue  bool
+		isFalse bool
+	}{
+		{
+			name:   "boolean true",
+			expr:   `true`,
+			isTrue: true,
+		},
+		{
+			name:   "string true",
+			expr:   `"true"`,
+			isTrue: true,
+		},
+		{
+			name:    "boolean false",
+			expr:    `false`,
+			isFalse: true,
+		},
+		{
+			name:    "string false",
+			expr:    `"false"`,
+			isFalse: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attr := newTestAttribute(t, tt.expr, nil)
+			assert.Equal(t, tt.isTrue, attr.IsTrue())
+			assert.Equal(t, tt.isFalse, attr.IsFalse())
 		})
 	}
 }

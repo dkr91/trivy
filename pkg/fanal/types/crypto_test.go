@@ -20,6 +20,24 @@ func TestCryptoAlgorithmJSON(t *testing.T) {
 	assert.JSONEq(t, `{"Primitive":""}`, string(got))
 }
 
+// TestDigestIdentity checks the value against the SHA-256 vector published for "abc" in
+// FIPS 180-2 appendix B.1, and against the canonical form Validate requires.
+func TestDigestIdentity(t *testing.T) {
+	t.Parallel()
+
+	identity := types.DigestIdentity(types.CryptoMethodSHA256, []byte("abc"))
+	assert.Equal(t, types.CryptoIdentity{
+		Method: types.CryptoMethodSHA256,
+		Value:  "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+	}, identity)
+
+	descriptor := types.CryptoDescriptor{
+		Kind:     types.CryptoKindCertificate,
+		Identity: identity,
+	}
+	require.NoError(t, descriptor.Validate())
+}
+
 func TestCryptoAssetDescriptor(t *testing.T) {
 	t.Parallel()
 
@@ -70,7 +88,7 @@ func TestCryptoAssetValidate(t *testing.T) {
 		{
 			name: "DER certificate",
 			asset: cryptotest.CertificateAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
-				a.Certificate.Encoding = types.CryptoEncodingDER
+				a.Encoding = types.CryptoEncodingDER
 			})),
 			wantErr: "",
 		},
@@ -97,8 +115,8 @@ func TestCryptoAssetValidate(t *testing.T) {
 		{
 			name: "derived public key without format or encoding",
 			asset: cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
-				a.Key.Format = ""
-				a.Key.Encoding = ""
+				a.Format = ""
+				a.Encoding = ""
 			})),
 			wantErr: "",
 		},
@@ -196,25 +214,62 @@ func TestCryptoAssetValidate(t *testing.T) {
 			wantErr: `unknown certificate format "PEM"`,
 		},
 		{
-			name: "unknown certificate encoding",
+			name: "unknown encoding",
 			asset: cryptotest.CertificateAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
-				a.Certificate.Encoding = "SSH"
+				a.Encoding = "SSH"
 			})),
-			wantErr: `unknown certificate encoding "SSH"`,
+			wantErr: `unknown encoding "SSH"`,
 		},
 		{
-			name: "unknown key format",
-			asset: cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
-				a.Key.Format = "OpenSSH"
+			name: "unknown keystore type",
+			asset: cryptotest.CertificateAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Keystore = "JCEKS"
 			})),
-			wantErr: `unknown key format "OpenSSH"`,
+			wantErr: `unknown keystore type "JCEKS"`,
 		},
 		{
-			name: "unknown key encoding",
-			asset: cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
-				a.Key.Encoding = "SSH"
+			name: "DER certificate in a keystore",
+			asset: cryptotest.CertificateAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Encoding = types.CryptoEncodingDER
+				a.Keystore = types.CryptoKeystorePKCS12
 			})),
-			wantErr: `unknown key encoding "SSH"`,
+			wantErr: "",
+		},
+		{
+			name: "PEM certificate in a keystore",
+			asset: cryptotest.CertificateAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Encoding = types.CryptoEncodingPEM
+				a.Keystore = types.CryptoKeystorePKCS12
+			})),
+			wantErr: `keystore "PKCS#12" requires DER encoding`,
+		},
+		{
+			name: "algorithm in a keystore",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Keystore = types.CryptoKeystorePKCS12
+			})),
+			wantErr: `keystore "PKCS#12" requires DER encoding`,
+		},
+		{
+			name: "unknown key container format",
+			asset: cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Format = "OpenSSH"
+			})),
+			wantErr: `unknown key container format "OpenSSH"`,
+		},
+		{
+			name: "key container format on a certificate",
+			asset: cryptotest.CertificateAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Format = types.CryptoKeyFormatPKCS8
+			})),
+			wantErr: `asset kind "certificate" has no key container`,
+		},
+		{
+			name: "encoding on an algorithm",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Encoding = types.CryptoEncodingPEM
+			})),
+			wantErr: `asset kind "algorithm" has no encoded form`,
 		},
 		{
 			name: "unknown primitive",
@@ -222,6 +277,49 @@ func TestCryptoAssetValidate(t *testing.T) {
 				a.Algorithm.Primitive = "hash"
 			})),
 			wantErr: `unknown algorithm primitive "hash"`,
+		},
+		{
+			name: "algorithm with security levels",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Algorithm.ClassicalSecurityLevel = new(112)
+				a.Algorithm.NISTQuantumSecurityLevel = new(0)
+			})),
+			wantErr: "",
+		},
+		{
+			name: "highest NIST quantum security level",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Algorithm.NISTQuantumSecurityLevel = new(6)
+			})),
+			wantErr: "",
+		},
+		{
+			name: "negative classical security level",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Algorithm.ClassicalSecurityLevel = new(-1)
+			})),
+			wantErr: "classical security level must be positive",
+		},
+		{
+			name: "zero classical security level",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Algorithm.ClassicalSecurityLevel = new(0)
+			})),
+			wantErr: "classical security level must be positive",
+		},
+		{
+			name: "NIST quantum security level above 6",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Algorithm.NISTQuantumSecurityLevel = new(7)
+			})),
+			wantErr: "NIST quantum security level must be between 0 and 6",
+		},
+		{
+			name: "negative NIST quantum security level",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(a *types.CryptoAsset) {
+				a.Algorithm.NISTQuantumSecurityLevel = new(-1)
+			})),
+			wantErr: "NIST quantum security level must be between 0 and 6",
 		},
 		{
 			name: "negative key size",
@@ -406,11 +504,170 @@ func TestCryptoAssetClone(t *testing.T) {
 		t.Parallel()
 
 		source := cryptotest.AlgorithmAsset()
+		source.Algorithm.ClassicalSecurityLevel = new(112)
+		source.Algorithm.NISTQuantumSecurityLevel = new(0)
 		clone := source.Clone()
 		require.NotSame(t, source.Algorithm, clone.Algorithm)
 		assert.Equal(t, source, clone)
 
 		clone.Algorithm.Family = "changed"
-		assert.Equal(t, "RSA", source.Algorithm.Family)
+		*clone.Algorithm.ClassicalSecurityLevel = 128
+		*clone.Algorithm.NISTQuantumSecurityLevel = 1
+		assert.Empty(t, source.Algorithm.Family)
+		assert.Equal(t, 112, *source.Algorithm.ClassicalSecurityLevel)
+		assert.Equal(t, 0, *source.Algorithm.NISTQuantumSecurityLevel)
 	})
+}
+
+func TestCryptoAssetsFinalize_AssetID(t *testing.T) {
+	base := cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(asset *types.CryptoAsset) {
+		asset.Layer = types.Layer{DiffID: "sha256:9a4f"}
+	}))
+
+	tests := []struct {
+		name   string
+		mutate func(*types.CryptoAsset)
+		same   bool
+	}{
+		{
+			name:   "same asset",
+			mutate: func(*types.CryptoAsset) {},
+			same:   true,
+		},
+		{
+			name: "different name and encoding",
+			mutate: func(asset *types.CryptoAsset) {
+				asset.Name = "RSA-2048 public key"
+				asset.Encoding = types.CryptoEncodingDER
+			},
+			same: true,
+		},
+		{
+			name: "different identity",
+			mutate: func(asset *types.CryptoAsset) {
+				asset.Identity.Value = "4f1c"
+			},
+		},
+		{
+			name: "different file path",
+			mutate: func(asset *types.CryptoAsset) {
+				asset.FilePath = "/etc/other.pem"
+			},
+		},
+		{
+			name: "same file in a different layer",
+			mutate: func(asset *types.CryptoAsset) {
+				asset.Layer.DiffID = "sha256:3c1d"
+			},
+			same: true,
+		},
+		{
+			name: "key without a container of its own",
+			mutate: func(asset *types.CryptoAsset) {
+				asset.Format = ""
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			other := cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(asset *types.CryptoAsset) {
+				asset.Layer = base.Layer
+				tt.mutate(asset)
+			}))
+			assets := types.CryptoAssets{base, other}
+			assets.Finalize()
+			assert.NotEmpty(t, assets[0].AssetID)
+			assert.Equal(t, tt.same, assets[0].AssetID == assets[1].AssetID)
+		})
+	}
+}
+
+func TestCryptoAssetsFinalize_KeyPairs(t *testing.T) {
+	publicKey := cryptotest.PublicKeyAsset()
+	otherPublicKey := cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(asset *types.CryptoAsset) {
+		asset.Identity.Value = strings.Repeat("d", 64)
+		asset.FilePath = "etc/ssl/certs/other.pem"
+	}))
+	correspondsTo := types.CryptoRelationship{
+		Type:         types.CryptoRelationshipCorrespondsTo,
+		RelatedAsset: publicKey.Descriptor(),
+	}
+	privateKeyAt := func(path string, relationships ...types.CryptoRelationship) types.CryptoAsset {
+		return cryptotest.PrivateKeyAsset(cryptotest.WithMutate(func(asset *types.CryptoAsset) {
+			asset.FilePath = path
+			asset.Relationships = relationships
+		}))
+	}
+
+	tests := []struct {
+		name   string
+		assets types.CryptoAssets
+		want   types.CryptoAssets
+	}{
+		{
+			name:   "a private key found without its public half",
+			assets: types.CryptoAssets{privateKeyAt("etc/ssl/private/server.key")},
+			want:   types.CryptoAssets{privateKeyAt("etc/ssl/private/server.key")},
+		},
+		{
+			name: "a private key and the public key derived from it",
+			assets: types.CryptoAssets{
+				privateKeyAt("etc/ssl/private/server.key"),
+				publicKey,
+			},
+			want: types.CryptoAssets{
+				privateKeyAt("etc/ssl/private/server.key", correspondsTo),
+				publicKey,
+			},
+		},
+		{
+			name: "another public key of the same size",
+			assets: types.CryptoAssets{
+				privateKeyAt("etc/ssl/private/server.key"),
+				otherPublicKey,
+				publicKey,
+			},
+			want: types.CryptoAssets{
+				privateKeyAt("etc/ssl/private/server.key", correspondsTo),
+				otherPublicKey,
+				publicKey,
+			},
+		},
+		{
+			name: "the same private key found in two files",
+			assets: types.CryptoAssets{
+				privateKeyAt("etc/ssl/private/server.key"),
+				privateKeyAt("opt/app/server.key"),
+				publicKey,
+			},
+			want: types.CryptoAssets{
+				privateKeyAt("etc/ssl/private/server.key", correspondsTo),
+				privateKeyAt("opt/app/server.key", correspondsTo),
+				publicKey,
+			},
+		},
+		{
+			name: "an encrypted container is identified by the container itself",
+			assets: types.CryptoAssets{
+				cryptotest.EncryptedPrivateKeyAsset(),
+				publicKey,
+			},
+			want: types.CryptoAssets{
+				cryptotest.EncryptedPrivateKeyAsset(),
+				publicKey,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.assets.Finalize()
+			// IDs are covered by the other test
+			for i := range tt.assets {
+				tt.assets[i].AssetID = ""
+			}
+			assert.Equal(t, tt.want, tt.assets)
+		})
+	}
 }

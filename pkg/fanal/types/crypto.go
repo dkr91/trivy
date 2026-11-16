@@ -1,10 +1,17 @@
 package types
 
 import (
+	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"slices"
+	"strconv"
 
+	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	"golang.org/x/xerrors"
+
+	"github.com/aquasecurity/trivy/pkg/log"
 )
 
 // CryptoKind identifies the category of a cryptographic asset.
@@ -31,7 +38,7 @@ const (
 	CryptoMethodEncryptedPKCS8SHA256 CryptoIdentityMethod = "encrypted-pkcs8-sha256"
 	// CryptoMethodEncryptedRFC1423SHA256 identifies opaque CryptoKindKey assets with CryptoKeyTypePrivate. The value is the lowercase SHA-256 digest of canonical RFC 1423 encrypted PEM, including its label, headers, and ciphertext, and parameters are empty.
 	CryptoMethodEncryptedRFC1423SHA256 CryptoIdentityMethod = "encrypted-rfc1423-sha256"
-	// CryptoMethodOID identifies CryptoKindAlgorithm assets. The value is a canonical dotted-decimal OID, and parameters are empty or key-size=<bits> / curve=<name> when needed to distinguish the algorithm asset.
+	// CryptoMethodOID identifies CryptoKindAlgorithm assets. The value is a canonical dotted-decimal OID, and parameters are empty or the canonical CryptoAlgorithmParameters encoding, such as key-size=2048, key-size=2048,subgroup-size=256 or curve=P-256, when needed to distinguish the algorithm asset.
 	CryptoMethodOID CryptoIdentityMethod = "oid"
 )
 
@@ -40,6 +47,16 @@ type CryptoIdentity struct {
 	Method     CryptoIdentityMethod `json:",omitempty"`
 	Value      string               `json:",omitempty"`
 	Parameters string               `json:",omitempty"`
+}
+
+// DigestIdentity identifies material by the SHA-256 digest of its canonical form. The
+// method states which form that is.
+func DigestIdentity(method CryptoIdentityMethod, canonical []byte) CryptoIdentity {
+	digest := sha256.Sum256(canonical)
+	return CryptoIdentity{
+		Method: method,
+		Value:  hex.EncodeToString(digest[:]),
+	}
 }
 
 // CryptoEncoding identifies the outer encoding of source cryptographic data.
@@ -52,14 +69,23 @@ const (
 	CryptoEncodingDER CryptoEncoding = "DER"
 )
 
-// CryptoAsset describes a format-neutral cryptographic asset.
-type CryptoAsset struct {
+// CryptoKeystoreType identifies the keystore that source cryptographic data is stored in.
+type CryptoKeystoreType string
+
+const (
+	// CryptoKeystorePKCS12 identifies a PKCS#12 keystore.
+	CryptoKeystorePKCS12 CryptoKeystoreType = "PKCS#12"
+	// CryptoKeystoreJKS identifies a JKS keystore.
+	CryptoKeystoreJKS CryptoKeystoreType = "JKS"
+)
+
+// CryptoAssetInfo describes a format-neutral cryptographic asset. Its identity is derived
+// from the material itself, so material found in several places has one description.
+type CryptoAssetInfo struct {
 	Kind     CryptoKind     `json:",omitempty"`
 	KeyType  CryptoKeyType  `json:",omitempty"`
 	Identity CryptoIdentity `json:",omitzero"`
 	Name     string         `json:",omitempty"`
-	FilePath string         `json:",omitempty"`
-	Layer    Layer          `json:",omitzero"`
 
 	Certificate   *CryptoCertificate   `json:",omitempty"`
 	Key           *CryptoKey           `json:",omitempty"`
@@ -68,7 +94,7 @@ type CryptoAsset struct {
 }
 
 // Descriptor returns the comparable identity projected from the asset.
-func (a *CryptoAsset) Descriptor() CryptoDescriptor {
+func (a CryptoAssetInfo) Descriptor() CryptoDescriptor {
 	return CryptoDescriptor{
 		Kind:     a.Kind,
 		KeyType:  a.KeyType,
@@ -77,7 +103,7 @@ func (a *CryptoAsset) Descriptor() CryptoDescriptor {
 }
 
 // Validate checks the intrinsic asset invariants.
-func (a *CryptoAsset) Validate() error {
+func (a CryptoAssetInfo) Validate() error {
 	descriptor := a.Descriptor()
 	if err := descriptor.Validate(); err != nil {
 		return xerrors.Errorf("validate descriptor: %w", err)
@@ -123,9 +149,19 @@ func (a *CryptoAsset) Validate() error {
 	return nil
 }
 
-// Clone returns a deep copy of the asset.
-func (a *CryptoAsset) Clone() CryptoAsset {
-	clone := *a
+// CompareCryptoAssets orders assets by identity, then by where they were found.
+func CompareCryptoAssets(a, b CryptoAsset) int {
+	return cmp.Or(
+		a.Descriptor().Compare(b.Descriptor()),
+		cmp.Compare(a.FilePath, b.FilePath),
+		cmp.Compare(a.Layer.DiffID, b.Layer.DiffID),
+		cmp.Compare(a.Format, b.Format),
+	)
+}
+
+// Clone returns a deep copy of the description.
+func (a CryptoAssetInfo) Clone() CryptoAssetInfo {
+	clone := a
 	clone.Relationships = slices.Clone(a.Relationships)
 	if a.Certificate != nil {
 		clone.Certificate = new(*a.Certificate)
@@ -141,18 +177,19 @@ func (a *CryptoAsset) Clone() CryptoAsset {
 	}
 	if a.Algorithm != nil {
 		clone.Algorithm = new(*a.Algorithm)
+		if a.Algorithm.ClassicalSecurityLevel != nil {
+			clone.Algorithm.ClassicalSecurityLevel = new(*a.Algorithm.ClassicalSecurityLevel)
+		}
+		if a.Algorithm.NISTQuantumSecurityLevel != nil {
+			clone.Algorithm.NISTQuantumSecurityLevel = new(*a.Algorithm.NISTQuantumSecurityLevel)
+		}
 	}
 	return clone
 }
 
-func (a *CryptoAsset) validateCertificate() error {
+func (a CryptoAssetInfo) validateCertificate() error {
 	if a.Certificate.Format != CryptoCertificateFormatX509 {
 		return xerrors.Errorf("unknown certificate format %q", a.Certificate.Format)
-	}
-	switch a.Certificate.Encoding {
-	case "", CryptoEncodingPEM, CryptoEncodingDER:
-	default:
-		return xerrors.Errorf("unknown certificate encoding %q", a.Certificate.Encoding)
 	}
 	if a.Certificate.MaxPathLen < 0 {
 		return xerrors.Errorf("certificate path length must not be negative")
@@ -163,21 +200,10 @@ func (a *CryptoAsset) validateCertificate() error {
 	return nil
 }
 
-func (a *CryptoAsset) validateKey() error {
+func (a CryptoAssetInfo) validateKey() error {
 	if a.Key.Size < 0 {
 		return xerrors.Errorf("key size must not be negative")
 	}
-	switch a.Key.Format {
-	case "", CryptoKeyFormatPKCS1, CryptoKeyFormatPKCS8, CryptoKeyFormatSEC1, CryptoKeyFormatPKIX:
-	default:
-		return xerrors.Errorf("unknown key format %q", a.Key.Format)
-	}
-	switch a.Key.Encoding {
-	case "", CryptoEncodingPEM, CryptoEncodingDER:
-	default:
-		return xerrors.Errorf("unknown key encoding %q", a.Key.Encoding)
-	}
-
 	encrypted := a.KeyType == CryptoKeyTypePrivate &&
 		(a.Identity.Method == CryptoMethodEncryptedPKCS8SHA256 || a.Identity.Method == CryptoMethodEncryptedRFC1423SHA256)
 	if a.Key.Encrypted != encrypted {
@@ -186,11 +212,139 @@ func (a *CryptoAsset) validateKey() error {
 	return nil
 }
 
-func (a *CryptoAsset) validateAlgorithm() error {
+func (a CryptoAssetInfo) validateAlgorithm() error {
 	switch a.Algorithm.Primitive {
 	case CryptoPrimitiveUnknown, CryptoPrimitiveSignature, CryptoPrimitivePKE:
 	default:
 		return xerrors.Errorf("unknown algorithm primitive %q", a.Algorithm.Primitive)
 	}
+	if level := a.Algorithm.ClassicalSecurityLevel; level != nil && *level <= 0 {
+		return xerrors.Errorf("classical security level must be positive")
+	}
+	// NIST defines five categories, and the CycloneDX schema allows up to 6.
+	if level := a.Algorithm.NISTQuantumSecurityLevel; level != nil && (*level < 0 || *level > 6) {
+		return xerrors.Errorf("NIST quantum security level must be between 0 and 6")
+	}
 	return nil
+}
+
+// CryptoAsset is a described asset together with the file it was found in and the
+// container it was stored in there.
+type CryptoAsset struct {
+	// AssetID identifies the asset within a report.
+	AssetID string `json:",omitempty"`
+	CryptoAssetInfo
+	FilePath string `json:",omitempty"`
+	// Format is empty for a key with no container of its own, such as the key of a certificate.
+	Format CryptoKeyFormat `json:",omitempty"`
+	// Encoding is empty for a derived asset, such as an algorithm.
+	Encoding CryptoEncoding `json:",omitempty"`
+	// Keystore is empty for material outside a keystore.
+	Keystore CryptoKeystoreType `json:",omitempty"`
+	// Layer is empty for a target that has no layers.
+	Layer Layer `json:",omitzero"`
+}
+
+// Validate checks the asset invariants together with those of its description.
+func (a CryptoAsset) Validate() error {
+	if err := a.CryptoAssetInfo.Validate(); err != nil {
+		return xerrors.Errorf("validate description: %w", err)
+	}
+
+	switch a.Format {
+	case "", CryptoKeyFormatPKCS1, CryptoKeyFormatPKCS8, CryptoKeyFormatSEC1, CryptoKeyFormatPKIX:
+	default:
+		return xerrors.Errorf("unknown key container format %q", a.Format)
+	}
+	if a.Format != "" && a.Kind != CryptoKindKey {
+		return xerrors.Errorf("asset kind %q has no key container", a.Kind)
+	}
+
+	switch a.Encoding {
+	case "", CryptoEncodingPEM, CryptoEncodingDER:
+	default:
+		return xerrors.Errorf("unknown encoding %q", a.Encoding)
+	}
+	if a.Encoding != "" && a.Kind == CryptoKindAlgorithm {
+		return xerrors.Errorf("asset kind %q has no encoded form", a.Kind)
+	}
+
+	switch a.Keystore {
+	case "", CryptoKeystorePKCS12, CryptoKeystoreJKS:
+	default:
+		return xerrors.Errorf("unknown keystore type %q", a.Keystore)
+	}
+	if a.Keystore != "" && a.Encoding != CryptoEncodingDER {
+		return xerrors.Errorf("keystore %q requires %s encoding", a.Keystore, CryptoEncodingDER)
+	}
+	return nil
+}
+
+// Clone returns a deep copy of the asset.
+func (a CryptoAsset) Clone() CryptoAsset {
+	a.CryptoAssetInfo = a.CryptoAssetInfo.Clone()
+	return a
+}
+
+// CryptoAssets is a list of cryptographic assets.
+type CryptoAssets []CryptoAsset
+
+// Finalize sets the ID of every asset and links key pairs.
+func (assets CryptoAssets) Finalize() {
+	assets.assignIDs()
+	assets.linkKeyPairs()
+}
+
+func (assets CryptoAssets) assignIDs() {
+	for i := range assets {
+		assets[i].AssetID = assetID(assets[i])
+	}
+}
+
+// linkKeyPairs points every private key at the public key derived from it, when both were
+// found. An encrypted container is never linked, because its identity is the digest of the
+// container and not of a SubjectPublicKeyInfo.
+func (assets CryptoAssets) linkKeyPairs() {
+	public := make(map[CryptoIdentity]CryptoDescriptor)
+	for _, asset := range assets {
+		if asset.Kind == CryptoKindKey && asset.KeyType == CryptoKeyTypePublic {
+			public[asset.Identity] = asset.Descriptor()
+		}
+	}
+	if len(public) == 0 {
+		return
+	}
+
+	for i, asset := range assets {
+		if asset.Kind != CryptoKindKey || asset.KeyType != CryptoKeyTypePrivate {
+			continue
+		}
+		descriptor, found := public[asset.Identity]
+		if !found {
+			continue
+		}
+		assets[i].Relationships = append(assets[i].Relationships, CryptoRelationship{
+			Type:         CryptoRelationshipCorrespondsTo,
+			RelatedAsset: descriptor,
+		})
+	}
+}
+
+// assetID derives the ID from the descriptor, the file path and the format, so the same
+// material found in different files gets different IDs.
+func assetID(asset CryptoAsset) string {
+	v := map[string]any{
+		"descriptor": asset.Descriptor().String(),
+		"filePath":   asset.FilePath,
+		"format":     asset.Format,
+	}
+	hash, err := hashstructure.Hash(v, hashstructure.FormatV2, &hashstructure.HashOptions{
+		ZeroNil:         true,
+		IgnoreZeroValue: true,
+	})
+	if err != nil {
+		log.Warn("Failed to calculate the cryptographic asset hash",
+			log.String("asset", asset.Descriptor().String()), log.FilePath(asset.FilePath), log.Err(err))
+	}
+	return strconv.FormatUint(hash, 16)
 }

@@ -107,6 +107,7 @@ func (s *ScanServer) ToOptions(in *rpcScanner.ScanOptions) types.ScanOptions {
 		IncludeDevDeps:      in.IncludeDevDeps,
 		LicenseCategories:   licenseCategories,
 		LicenseFull:         in.LicenseFull,
+		CryptoChecks:        in.CryptoChecks,
 		Distro:              distro,
 		VulnSeveritySources: vulnSeveritySources,
 	}
@@ -163,7 +164,7 @@ func (s *CacheServer) MissingBlobs(ctx context.Context, in *rpcCache.MissingBlob
 func (s *CacheServer) DeleteBlobs(ctx context.Context, in *rpcCache.DeleteBlobsRequest) (*emptypb.Empty, error) {
 	blobIDs := rpc.ConvertFromDeleteBlobsRequest(in)
 	if err := s.cache.DeleteBlobs(ctx, blobIDs); err != nil {
-		return nil, teeError(xerrors.Errorf("failed to remove a blobs: %w", err))
+		return nil, teeError(xerrors.Errorf("failed to remove blobs: %w", err))
 	}
 	return &emptypb.Empty{}, nil
 }

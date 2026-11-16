@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/xerrors"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 var (
@@ -18,7 +19,7 @@ var (
 	K8sVersionFlag = Flag[string]{
 		Name:       "k8s-version",
 		ConfigName: "kubernetes.k8s-version",
-		Usage:      "specify k8s version to validate outdated api by it (example: 1.21.0)",
+		Usage:      "specify k8s version to validate outdated APIs against (example: 1.21.0)",
 	}
 	TolerationsFlag = Flag[[]string]{
 		Name:       "tolerations",
@@ -61,7 +62,7 @@ var (
 	ExcludeKinds = Flag[[]string]{
 		Name:       "exclude-kinds",
 		ConfigName: "kubernetes.excludeKinds",
-		Usage:      "indicate the kinds exclude from scanning (example: node)",
+		Usage:      "indicate the kinds excluded from scanning (example: node)",
 	}
 	IncludeKinds = Flag[[]string]{
 		Name:       "include-kinds",
@@ -226,14 +227,17 @@ func optionToTolerations(tolerationsOptions []string) ([]corev1.Toleration, erro
 			corev1.TaintEffect(tolerationParts[1]) != corev1.TaintEffectNoExecute {
 			return []corev1.Toleration{}, errors.New("toleration effect must be a valid value")
 		}
-		keyValue := strings.Split(tolerationParts[0], "=")
+		key, value, _ := strings.Cut(tolerationParts[0], "=")
+		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+			return nil, xerrors.Errorf("invalid toleration value %q: %s", value, strings.Join(errs, "; "))
+		}
 		operator := corev1.TolerationOpEqual
-		if keyValue[1] == "" {
+		if value == "" {
 			operator = corev1.TolerationOpExists
 		}
 		toleration := corev1.Toleration{
-			Key:      keyValue[0],
-			Value:    keyValue[1],
+			Key:      key,
+			Value:    value,
 			Operator: operator,
 			Effect:   corev1.TaintEffect(tolerationParts[1]),
 		}
@@ -242,7 +246,7 @@ func optionToTolerations(tolerationsOptions []string) ([]corev1.Toleration, erro
 		if len(tolerationParts) == 3 {
 			tolerationSec, err = strconv.Atoi(tolerationParts[2])
 			if err != nil {
-				return nil, errors.New("TolerationSeconds must must be a number")
+				return nil, errors.New("TolerationSeconds must be a number")
 			}
 			toleration.TolerationSeconds = new(int64(tolerationSec))
 		}

@@ -83,6 +83,39 @@ func TestResults_Failed(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "crypto findings",
+			results: types.Results{
+				{
+					Target: "test",
+					Class:  types.ClassCrypto,
+					CryptoFindings: []types.CryptoFinding{
+						{
+							RuleID:   "CRYPTO-0002",
+							Severity: "HIGH",
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "crypto assets without findings",
+			results: types.Results{
+				{
+					Target: "test",
+					Class:  types.ClassCrypto,
+					CryptoAssets: []ftypes.CryptoAsset{
+						{
+							CryptoAssetInfo: ftypes.CryptoAssetInfo{
+								Kind: ftypes.CryptoKindCertificate,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -203,6 +236,12 @@ func TestWrite_Sarif(t *testing.T) {
 			artifactType: ftypes.TypeRepository,
 			target:       "/tmp/foo",
 			wantRootPath: tmpFooRootPath,
+		},
+		{
+			name:         "TypeRepository strips credentials from target in ROOTPATH",
+			artifactType: ftypes.TypeRepository,
+			target:       "https://testuser:testpass@example.com/repo.git",
+			wantRootPath: regexp.MustCompile(`^file:///([A-Z]:/)?[^@]*example\.com/repo\.git/$`),
 		},
 		{
 			name:         "TypeContainerImage does not set ROOTPATH",

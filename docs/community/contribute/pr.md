@@ -171,6 +171,9 @@ config:
 - dockerfile
 - terraform
 - cloudformation
+- helm
+- ansible
+- arm
 
 container
 
@@ -192,7 +195,7 @@ SBOM:
 
 others:
 
-- helm
+- chart
 - report
 - db
 - parser
@@ -202,7 +205,7 @@ The `<scope>` can be empty (e.g. if the change is a global or difficult to assig
 
 **Breaking changes**
 
-A PR, introducing a breaking API change, needs to append a `!` after the type/scope.
+A PR that introduces a breaking change to a stable interface defined in the [compatibility and stability policy](../../guide/references/compatibility.md) needs to append a `!` after the type/scope.
 
 ### Example titles
 

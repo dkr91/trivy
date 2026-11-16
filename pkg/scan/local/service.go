@@ -13,6 +13,9 @@ import (
 	"golang.org/x/xerrors"
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
+	"github.com/aquasecurity/trivy/pkg/clock"
+	"github.com/aquasecurity/trivy/pkg/crypto"
+	"github.com/aquasecurity/trivy/pkg/crypto/scanner"
 	ospkgDetector "github.com/aquasecurity/trivy/pkg/detector/ospkg"
 	"github.com/aquasecurity/trivy/pkg/extension"
 	"github.com/aquasecurity/trivy/pkg/fanal/analyzer"
@@ -119,6 +122,7 @@ func (s Service) Scan(ctx context.Context, targetName, artifactKey string, blobK
 		Misconfigurations: mergeMisconfigurations(targetName, detail),
 		Secrets:           mergeSecrets(targetName, detail),
 		Licenses:          detail.Licenses,
+		CryptoAssets:      detail.CryptoAssets,
 		CustomResources:   detail.CustomResources,
 	}
 
@@ -160,6 +164,8 @@ func (s Service) ScanTarget(ctx context.Context, target types.ScanTarget, option
 
 	// Scan licenses
 	results = append(results, s.scanLicenses(target, options)...)
+
+	results = append(results, s.scanCrypto(ctx, target, options)...)
 
 	// For WASM plugins and custom analyzers
 	if len(target.CustomResources) != 0 {
@@ -314,6 +320,10 @@ func (s Service) scanOSPackageLicenses(packages []ftypes.Package, scanner licens
 	var licenses []types.DetectedLicense
 	for _, pkg := range packages {
 		for _, license := range pkg.Licenses {
+			// A license without a name can't be evaluated, so don't report it.
+			if strings.TrimSpace(license) == "" {
+				continue
+			}
 			licenses = append(licenses, toDetectedLicense(scanner, license, pkg.Name, ""))
 		}
 	}
@@ -331,6 +341,10 @@ func (s Service) scanApplicationLicenses(apps []ftypes.Application, scanner lice
 		var langLicenses []types.DetectedLicense
 		for _, lib := range app.Packages {
 			for _, license := range lib.Licenses {
+				// A license without a name can't be evaluated, so don't report it.
+				if strings.TrimSpace(license) == "" {
+					continue
+				}
 				// Lock files use app.FilePath - https://github.com/aquasecurity/trivy/blob/6ccc0a554b07b05fd049f882a1825a0e1e0aabe1/pkg/fanal/types/artifact.go#L245-L246
 				// Applications use lib.FilePath - https://github.com/aquasecurity/trivy/blob/6ccc0a554b07b05fd049f882a1825a0e1e0aabe1/pkg/fanal/types/artifact.go#L93-L94
 				filePath := lo.Ternary(lib.FilePath != "", lib.FilePath, app.FilePath)
@@ -381,6 +395,25 @@ func (s Service) scanFileLicenses(licenses []ftypes.LicenseFile, scanner licensi
 		Class:    types.ClassLicenseFile,
 		Licenses: detectedLicenses,
 	}
+}
+
+func (s Service) scanCrypto(ctx context.Context, target types.ScanTarget, options types.ScanOptions) types.Results {
+	if !options.Scanners.Enabled(types.CryptoScanner) || len(target.CryptoAssets) == 0 {
+		return nil
+	}
+
+	// The security levels are assessed here rather than during analysis, so that a change
+	// to their basis applies to cached assets without analyzing them again.
+	crypto.AssessStrength(target.CryptoAssets)
+	result := types.Result{
+		Target:       target.Name,
+		Class:        types.ClassCrypto,
+		CryptoAssets: target.CryptoAssets,
+	}
+	if options.CryptoChecks {
+		result.CryptoFindings = scanner.Scan(target.CryptoAssets, clock.Now(ctx))
+	}
+	return types.Results{result}
 }
 
 func toDetectedMisconfiguration(res ftypes.MisconfResult, defaultSeverity dbTypes.Severity,

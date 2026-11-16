@@ -31,6 +31,15 @@ func TestScanner_Scan(t *testing.T) {
 			wantSeverity: "CRITICAL",
 		},
 		{
+			name: "default unencumbered licenses",
+			categories: map[types.LicenseCategory][]string{
+				types.CategoryUnencumbered: expression.UnencumberedLicenses,
+			},
+			licenseName:  "MIT-0",
+			wantCategory: types.CategoryUnencumbered,
+			wantSeverity: "LOW",
+		},
+		{
 			name: "has plus",
 			categories: map[types.LicenseCategory][]string{
 				types.CategoryForbidden: {
@@ -164,6 +173,17 @@ func TestScanner_Scan(t *testing.T) {
 			name:         "unknown",
 			categories:   make(map[types.LicenseCategory][]string),
 			licenseName:  expression.BSD3Clause,
+			wantCategory: types.CategoryUnknown,
+			wantSeverity: "UNKNOWN",
+		},
+		{
+			name: "unparsable license name",
+			categories: map[types.LicenseCategory][]string{
+				types.CategoryReciprocal: {
+					expression.CDDL10,
+				},
+			},
+			licenseName:  "CDDL + GPLv2 with classpath exception",
 			wantCategory: types.CategoryUnknown,
 			wantSeverity: "UNKNOWN",
 		},

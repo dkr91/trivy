@@ -1,6 +1,7 @@
 package io_test
 
 import (
+	"strings"
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -9,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dtypes "github.com/aquasecurity/trivy-db/pkg/types"
+	"github.com/aquasecurity/trivy/internal/cryptotest"
+	"github.com/aquasecurity/trivy/pkg/digest"
 	ftypes "github.com/aquasecurity/trivy/pkg/fanal/types"
 	"github.com/aquasecurity/trivy/pkg/sbom/core"
 	sbomio "github.com/aquasecurity/trivy/pkg/sbom/io"
@@ -69,6 +72,9 @@ func TestEncoder_Encode(t *testing.T) {
 										Version: "2.37-15.1",
 									},
 								},
+								Repository: ftypes.PackageRepository{
+									Class: ftypes.RepositoryClassOfficial,
+								},
 							},
 							{
 								ID:      "curl@7.50.3-1",
@@ -82,8 +88,27 @@ func TestEncoder_Encode(t *testing.T) {
 										Version: "7.50.3-1",
 									},
 								},
+								Repository: ftypes.PackageRepository{
+									Class: ftypes.RepositoryClassOfficial,
+								},
 								DependsOn: []string{
 									"libc6@2.37-15.1",
+								},
+							},
+							{
+								ID:      "docker-ce@27.3.1-1",
+								Name:    "docker-ce",
+								Version: "27.3.1-1",
+								Identifier: ftypes.PkgIdentifier{
+									UID: "8D4E5F6A7B8C9D0E",
+									PURL: &packageurl.PackageURL{
+										Type:    packageurl.TypeDebian,
+										Name:    "docker-ce",
+										Version: "27.3.1-1",
+									},
+								},
+								Repository: ftypes.PackageRepository{
+									Class: ftypes.RepositoryClassThirdParty,
 								},
 							},
 						},
@@ -113,6 +138,17 @@ func TestEncoder_Encode(t *testing.T) {
 								Name:     "com.fasterxml.jackson.core:jackson-databind",
 								Version:  "2.13.4",
 								FilePath: "/foo/jackson-databind-2.13.4.jar",
+								Digest:   "sha1:76d1e0e3a5e0f8b9e4d3c2b1a0987654321fedcb",
+								Digests: []digest.SourcedDigest{
+									{
+										Digest: "sha1:76d1e0e3a5e0f8b9e4d3c2b1a0987654321fedcb",
+										Source: digest.SourceJavaArchive,
+									},
+									{
+										Digest: "sha256:cf7b0f1d1a1e9b3e5b6b7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3",
+										Source: digest.SourceUnknown,
+									},
+								},
 								Identifier: ftypes.PkgIdentifier{
 									UID: "A6BD5A2FE5C00E10",
 									PURL: &packageurl.PackageURL{
@@ -128,6 +164,8 @@ func TestEncoder_Encode(t *testing.T) {
 								Name:     "com.fasterxml.jackson.core:jackson-databind",
 								Version:  "2.13.4",
 								FilePath: "/bar/jackson-databind-2.13.4.jar",
+								// Data written before the sourced digests carries the legacy field only.
+								Digest: "sha1:1e2d3c4b5a69788796a5b4c3d2e1f00918273645",
 								Identifier: ftypes.PkgIdentifier{
 									UID: "64244651208EC759",
 									PURL: &packageurl.PackageURL{
@@ -300,6 +338,10 @@ func TestEncoder_Encode(t *testing.T) {
 							Name:  core.PropertyPkgType,
 							Value: "debian",
 						},
+						{
+							Name:  core.PropertyRepositoryClass,
+							Value: "official",
+						},
 					},
 					PkgIdentifier: ftypes.PkgIdentifier{
 						UID: "33654D2C483FC3AD",
@@ -324,6 +366,10 @@ func TestEncoder_Encode(t *testing.T) {
 							Name:  core.PropertyPkgType,
 							Value: "debian",
 						},
+						{
+							Name:  core.PropertyRepositoryClass,
+							Value: "official",
+						},
 					},
 					PkgIdentifier: ftypes.PkgIdentifier{
 						UID: "51BA9E006222819D",
@@ -337,12 +383,50 @@ func TestEncoder_Encode(t *testing.T) {
 				},
 				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000005"): {
 					Type:    core.TypeLibrary,
+					Name:    "docker-ce",
+					Version: "27.3.1-1",
+					Properties: []core.Property{
+						{
+							Name:  core.PropertyPkgID,
+							Value: "docker-ce@27.3.1-1",
+						},
+						{
+							Name:  core.PropertyPkgType,
+							Value: "debian",
+						},
+						{
+							Name:  core.PropertyRepositoryClass,
+							Value: "third-party",
+						},
+					},
+					PkgIdentifier: ftypes.PkgIdentifier{
+						UID: "8D4E5F6A7B8C9D0E",
+						PURL: &packageurl.PackageURL{
+							Type:    packageurl.TypeDebian,
+							Name:    "docker-ce",
+							Version: "27.3.1-1",
+						},
+						BOMRef: "pkg:deb/docker-ce@27.3.1-1",
+					},
+				},
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000006"): {
+					Type:    core.TypeLibrary,
 					Group:   "com.fasterxml.jackson.core",
 					Name:    "jackson-databind",
 					Version: "2.13.4",
 					Files: []core.File{
 						{
 							Path: "/foo/jackson-databind-2.13.4.jar",
+							Digests: []digest.SourcedDigest{
+								{
+									Digest: "sha1:76d1e0e3a5e0f8b9e4d3c2b1a0987654321fedcb",
+									Source: digest.SourceJavaArchive,
+								},
+								{
+									Digest: "sha256:cf7b0f1d1a1e9b3e5b6b7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3",
+									Source: digest.SourceUnknown,
+								},
+							},
 						},
 					},
 					Properties: []core.Property{
@@ -358,6 +442,14 @@ func TestEncoder_Encode(t *testing.T) {
 							Name:  core.PropertyPkgType,
 							Value: "jar",
 						},
+						{
+							Name:  core.PropertySourcedDigest,
+							Value: "java-archive:sha1:76d1e0e3a5e0f8b9e4d3c2b1a0987654321fedcb",
+						},
+						{
+							Name:  core.PropertySourcedDigest,
+							Value: "unknown:sha256:cf7b0f1d1a1e9b3e5b6b7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3",
+						},
 					},
 					PkgIdentifier: ftypes.PkgIdentifier{
 						UID: "A6BD5A2FE5C00E10",
@@ -367,10 +459,10 @@ func TestEncoder_Encode(t *testing.T) {
 							Name:      "jackson-databind",
 							Version:   "2.13.4",
 						},
-						BOMRef: "3ff14136-e09f-4df9-80ea-000000000005",
+						BOMRef: "3ff14136-e09f-4df9-80ea-000000000006",
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000006"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000007"): {
 					Type:    core.TypeLibrary,
 					Group:   "com.fasterxml.jackson.core",
 					Name:    "jackson-databind",
@@ -378,6 +470,13 @@ func TestEncoder_Encode(t *testing.T) {
 					Files: []core.File{
 						{
 							Path: "/bar/jackson-databind-2.13.4.jar",
+							// The acquisition method of a legacy value is not guessed.
+							Digests: []digest.SourcedDigest{
+								{
+									Digest: "sha1:1e2d3c4b5a69788796a5b4c3d2e1f00918273645",
+									Source: digest.SourceUnknown,
+								},
+							},
 						},
 					},
 					Properties: []core.Property{
@@ -393,6 +492,10 @@ func TestEncoder_Encode(t *testing.T) {
 							Name:  core.PropertyPkgType,
 							Value: "jar",
 						},
+						{
+							Name:  core.PropertySourcedDigest,
+							Value: "unknown:sha1:1e2d3c4b5a69788796a5b4c3d2e1f00918273645",
+						},
 					},
 					PkgIdentifier: ftypes.PkgIdentifier{
 						UID: "64244651208EC759",
@@ -402,10 +505,10 @@ func TestEncoder_Encode(t *testing.T) {
 							Name:      "jackson-databind",
 							Version:   "2.13.4",
 						},
-						BOMRef: "3ff14136-e09f-4df9-80ea-000000000006",
+						BOMRef: "3ff14136-e09f-4df9-80ea-000000000007",
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000007"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000008"): {
 					Type: core.TypeApplication,
 					Name: "trivy",
 					Properties: []core.Property{
@@ -419,10 +522,10 @@ func TestEncoder_Encode(t *testing.T) {
 						},
 					},
 					PkgIdentifier: ftypes.PkgIdentifier{
-						BOMRef: "3ff14136-e09f-4df9-80ea-000000000007",
+						BOMRef: "3ff14136-e09f-4df9-80ea-000000000008",
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000008"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000009"): {
 					Type:    core.TypeLibrary,
 					Name:    "github.com/aquasecurity/trivy",
 					Version: "v0.57.1",
@@ -448,7 +551,7 @@ func TestEncoder_Encode(t *testing.T) {
 						BOMRef: "pkg:golang/github.com/aquasecurity/trivy@v0.57.1",
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000009"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000010"): {
 					Type:    core.TypeLibrary,
 					Name:    "stdlib",
 					Version: "v1.22.9",
@@ -473,7 +576,7 @@ func TestEncoder_Encode(t *testing.T) {
 						BOMRef: "pkg:golang/stdlib@v1.22.9",
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000010"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000011"): {
 					Type:    core.TypeLibrary,
 					Name:    "github.com/aquasecurity/go-version",
 					Version: "v0.0.0-20240603093900-cf8a8d29271d",
@@ -507,10 +610,6 @@ func TestEncoder_Encode(t *testing.T) {
 						Type:       core.RelationshipContains,
 					},
 					{
-						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000005"),
-						Type:       core.RelationshipContains,
-					},
-					{
 						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000006"),
 						Type:       core.RelationshipContains,
 					},
@@ -518,10 +617,18 @@ func TestEncoder_Encode(t *testing.T) {
 						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000007"),
 						Type:       core.RelationshipContains,
 					},
+					{
+						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000008"),
+						Type:       core.RelationshipContains,
+					},
 				},
 				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000002"): {
 					{
 						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000004"),
+						Type:       core.RelationshipContains,
+					},
+					{
+						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000005"),
 						Type:       core.RelationshipContains,
 					},
 				},
@@ -534,24 +641,25 @@ func TestEncoder_Encode(t *testing.T) {
 				},
 				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000005"): nil,
 				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000006"): nil,
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000007"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000007"): nil,
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000008"): {
 					{
-						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000008"),
+						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000009"),
 						Type:       core.RelationshipContains,
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000008"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000009"): {
+					{
+						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000011"),
+						Type:       core.RelationshipDependsOn,
+					},
 					{
 						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000010"),
 						Type:       core.RelationshipDependsOn,
 					},
-					{
-						Dependency: uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000009"),
-						Type:       core.RelationshipDependsOn,
-					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000009"): nil,
 				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000010"): nil,
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000011"): nil,
 			},
 			wantVulns: map[uuid.UUID][]core.Vulnerability{
 				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000004"): {
@@ -565,7 +673,7 @@ func TestEncoder_Encode(t *testing.T) {
 						},
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000005"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000006"): {
 					{
 						ID:               "CVE-2022-42003",
 						PkgName:          "com.fasterxml.jackson.core:jackson-databind",
@@ -576,7 +684,7 @@ func TestEncoder_Encode(t *testing.T) {
 						},
 					},
 				},
-				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000006"): {
+				uuid.MustParse("3ff14136-e09f-4df9-80ea-000000000007"): {
 					{
 						ID:               "CVE-2022-42003",
 						PkgName:          "com.fasterxml.jackson.core:jackson-databind",
@@ -1683,6 +1791,103 @@ func TestEncoder_Encode(t *testing.T) {
 			assert.Equal(t, tt.wantVulns, got.Vulnerabilities())
 		})
 	}
+}
+
+func TestEncoder_EncodeCryptoAssets(t *testing.T) {
+	const (
+		baseLayer = "sha256:2c8b0e3c8d2d4b4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7081920"
+		userLayer = "sha256:9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0"
+
+		certificatePath = "etc/ssl/certs/ca.pem"
+		copiedPath      = "opt/app/ca.pem"
+		keyPath         = "opt/app/public.pem"
+	)
+
+	foundAt := func(asset ftypes.CryptoAsset, path, diffID string) ftypes.CryptoAsset {
+		asset.FilePath = path
+		asset.Layer = ftypes.Layer{DiffID: diffID}
+		return asset
+	}
+
+	certificate := cryptotest.CertificateAsset()
+	algorithm := cryptotest.AlgorithmAsset()
+	// A key taken from a certificate states no container of its own.
+	certificateKey := cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(asset *ftypes.CryptoAsset) {
+		asset.Format = ""
+		asset.Encoding = ""
+	}))
+	standaloneKey := cryptotest.PublicKeyAsset()
+
+	report := types.Report{
+		SchemaVersion: 2,
+		ArtifactName:  "debian:12",
+		ArtifactType:  ftypes.TypeContainerImage,
+		Results: types.Results{
+			{
+				Target: "debian:12",
+				Class:  types.ClassCrypto,
+				CryptoAssets: []ftypes.CryptoAsset{
+					// The same certificate rewritten at its path in the user layer.
+					foundAt(certificate, certificatePath, userLayer),
+					foundAt(certificate, certificatePath, baseLayer),
+					foundAt(algorithm, certificatePath, baseLayer),
+					foundAt(certificateKey, certificatePath, baseLayer),
+					// The certificate file also holds its key in a block of its own.
+					foundAt(standaloneKey, certificatePath, baseLayer),
+					// The same certificate copied into the user layer.
+					foundAt(certificate, copiedPath, userLayer),
+					foundAt(algorithm, copiedPath, userLayer),
+					// The key of that certificate, stored in a file of its own.
+					foundAt(standaloneKey, keyPath, userLayer),
+				},
+			},
+		},
+	}
+
+	got, err := sbomio.NewEncoder(sbomio.WithBOMRef()).Encode(report)
+	require.NoError(t, err)
+
+	assets := make(map[string]*core.CryptoComponent)
+	for _, component := range got.CryptoComponents() {
+		assets[component.BOMRef()] = component
+	}
+
+	want := map[string]*core.CryptoComponent{
+		"crypto:certificate:sha256:" + strings.Repeat("a", 64): {
+			Asset: certificate.CryptoAssetInfo,
+			Occurrences: []core.Occurrence{
+				{Location: certificatePath, LayerDiffID: baseLayer},
+				{Location: certificatePath, LayerDiffID: userLayer},
+				{Location: copiedPath, LayerDiffID: userLayer},
+			},
+		},
+		"crypto:algorithm:oid:1.2.840.113549.1.1.1": {
+			Asset: algorithm.CryptoAssetInfo,
+			Occurrences: []core.Occurrence{
+				{Location: certificatePath, LayerDiffID: baseLayer},
+				{Location: copiedPath, LayerDiffID: userLayer},
+			},
+		},
+		"crypto:key:public:spki-sha256:" + strings.Repeat("b", 64): {
+			Asset: standaloneKey.CryptoAssetInfo,
+			Occurrences: []core.Occurrence{
+				{Location: certificatePath, LayerDiffID: baseLayer},
+				{Location: keyPath, LayerDiffID: userLayer},
+			},
+		},
+	}
+
+	require.Len(t, assets, len(want))
+	for bomRef, wantComponent := range want {
+		component, ok := assets[bomRef]
+		require.True(t, ok, bomRef)
+		assert.EqualExportedValues(t, *wantComponent, *component, bomRef)
+	}
+
+	// Cryptographic assets are an inventory, not a dependency of the artifact.
+	assert.Equal(t, map[uuid.UUID][]core.Relationship{
+		got.Root().ID(): nil,
+	}, got.Relationships())
 }
 
 var (

@@ -153,6 +153,11 @@ func (b *BOM) unmarshalReferenceType(t cdx.ExternalReferenceType) (core.External
 func (b *BOM) parseComponents(cdxComponents *[]cdx.Component) map[string]*core.Component {
 	components := make(map[string]*core.Component)
 	for _, component := range lo.FromPtr(cdxComponents) {
+		// Trivy writes cryptographic assets but does not read them back yet.
+		if component.Type == cdx.ComponentTypeCryptographicAsset {
+			continue
+		}
+
 		c, err := b.parseComponent(component)
 		if errors.Is(err, ErrUnsupportedType) {
 			log.Info("Skipping the component with the unsupported type",
@@ -258,8 +263,8 @@ func (b *BOM) unmarshalLicenses(l *cdx.Licenses) []string {
 	return licenses
 }
 
-func (b *BOM) unmarshalHashes(hashes *[]cdx.Hash) []digest.Digest {
-	var digests []digest.Digest
+func (b *BOM) unmarshalHashes(hashes *[]cdx.Hash) []digest.SourcedDigest {
+	var digests []digest.SourcedDigest
 	for _, h := range lo.FromPtr(hashes) {
 		var alg digest.Algorithm
 		switch h.Algorithm {
@@ -275,7 +280,10 @@ func (b *BOM) unmarshalHashes(hashes *[]cdx.Hash) []digest.Digest {
 			log.Warn("Unsupported hash algorithm", log.String("algorithm", string(h.Algorithm)))
 			continue
 		}
-		digests = append(digests, digest.NewDigestFromString(alg, h.Value))
+		digests = append(digests, digest.SourcedDigest{
+			Digest: digest.NewDigestFromString(alg, h.Value),
+			Source: digest.SourceSBOM,
+		})
 	}
 	return digests
 }

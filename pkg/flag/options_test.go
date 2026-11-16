@@ -355,3 +355,113 @@ license:
 		})
 	}
 }
+
+func TestOptions_Align(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    flag.Options
+		wantErr string
+	}{
+		{
+			name: "crypto scanner with CycloneDX",
+			opts: flag.Options{
+				ReportOptions: flag.ReportOptions{Format: types.FormatCycloneDX},
+				ScanOptions:   flag.ScanOptions{Scanners: types.Scanners{types.CryptoScanner}},
+			},
+		},
+		{
+			name: "crypto scanner with JSON",
+			opts: flag.Options{
+				ReportOptions: flag.ReportOptions{Format: types.FormatJSON},
+				ScanOptions:   flag.ScanOptions{Scanners: types.Scanners{types.CryptoScanner}},
+			},
+		},
+		{
+			name: "crypto scanner with table",
+			opts: flag.Options{
+				ReportOptions: flag.ReportOptions{Format: types.FormatTable},
+				ScanOptions:   flag.ScanOptions{Scanners: types.Scanners{types.CryptoScanner}},
+			},
+		},
+		{
+			name: "crypto scanner with SARIF",
+			opts: flag.Options{
+				ReportOptions: flag.ReportOptions{Format: types.FormatSarif},
+				ScanOptions:   flag.ScanOptions{Scanners: types.Scanners{types.CryptoScanner}},
+			},
+			wantErr: "'--scanners crypto' can only be used with '--format cyclonedx', '--format json' or '--format table'",
+		},
+		{
+			name: "crypto scanner with SBOM sources",
+			opts: flag.Options{
+				ReportOptions: flag.ReportOptions{Format: types.FormatCycloneDX},
+				ScanOptions: flag.ScanOptions{
+					Scanners:    types.Scanners{types.CryptoScanner},
+					SBOMSources: []string{types.SBOMSourceOCI},
+				},
+			},
+			wantErr: "'--scanners crypto' cannot be used with '--sbom-sources'",
+		},
+		{
+			name: "no crypto scanner with SBOM sources",
+			opts: flag.Options{
+				ReportOptions: flag.ReportOptions{Format: types.FormatCycloneDX},
+				ScanOptions: flag.ScanOptions{
+					Scanners:    types.Scanners{types.VulnerabilityScanner},
+					SBOMSources: []string{types.SBOMSourceOCI},
+				},
+			},
+		},
+		{
+			name: "no crypto scanner with JSON",
+			opts: flag.Options{
+				ReportOptions: flag.ReportOptions{Format: types.FormatJSON},
+				ScanOptions:   flag.ScanOptions{Scanners: types.Scanners{types.VulnerabilityScanner}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.opts.Align(&flag.Flags{})
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestOptions_ScanOpts_cryptoChecks(t *testing.T) {
+	tests := []struct {
+		name   string
+		format types.Format
+		want   bool
+	}{
+		{
+			name:   "JSON",
+			format: types.FormatJSON,
+			want:   true,
+		},
+		{
+			name:   "table",
+			format: types.FormatTable,
+			want:   true,
+		},
+		{
+			name:   "CycloneDX",
+			format: types.FormatCycloneDX,
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := flag.Options{
+				ReportOptions: flag.ReportOptions{Format: tt.format},
+			}
+			assert.Equal(t, tt.want, opts.ScanOpts().CryptoChecks)
+		})
+	}
+}

@@ -157,6 +157,10 @@ func loadPluginCommands() []*cobra.Command {
 }
 
 func initConfig(configFile string, pathChanged bool) error {
+	if configFile == "" {
+		return nil
+	}
+
 	// Read from config
 	viper.SetConfigFile(configFile)
 	viper.SetConfigType("yaml")
@@ -262,6 +266,12 @@ func NewImageCommand(globalFlags *flag.GlobalFlagGroup) *cobra.Command {
 	misconfFlagGroup.CloudformationParamVars = nil // disable '--cf-params'
 	misconfFlagGroup.TerraformTFVars = nil         // disable '--tf-vars'
 
+	scanFlagGroup := flag.NewScanFlagGroup()
+	scanners := flag.ScannersFlag.Clone()
+	// crypto is available for container images only and is off by default
+	scanners.Values = append(scanners.Values, string(types.CryptoScanner))
+	scanFlagGroup.Scanners = scanners
+
 	imageFlags := flag.Flags{
 		globalFlags,
 		flag.NewCacheFlagGroup(),
@@ -275,7 +285,7 @@ func NewImageCommand(globalFlags *flag.GlobalFlagGroup) *cobra.Command {
 		flag.NewRegistryFlagGroup(),
 		flag.NewRegoFlagGroup(),
 		reportFlagGroup,
-		flag.NewScanFlagGroup(),
+		scanFlagGroup,
 		flag.NewSecretFlagGroup(),
 		flag.NewVulnerabilityFlagGroup(),
 	}
@@ -536,6 +546,7 @@ func NewConvertCommand(globalFlags *flag.GlobalFlagGroup) *cobra.Command {
 		Scanners: flag.ScannersFlag.Clone(),
 	}
 	scanFlagGroup.Scanners.Default = nil // disable default scanners
+	scanFlagGroup.Scanners.Values = append(scanFlagGroup.Scanners.Values, string(types.CryptoScanner))
 	scanFlagGroup.Scanners.Usage = "List of scanners included when generating the json report. Used only for rendering the summary table."
 
 	convertFlags := flag.Flags{

@@ -14,6 +14,7 @@ Some scanners run on the client side, even in client/server mode.
 | Misconfiguration |       Client[^1]        |
 |      Secret      |       Client[^2]        |
 |     License      |         Server          |
+|      Crypto      |       Server[^3]        |
 
 !!! note
     Scanning of misconfigurations and secrets is performed on the client side (as in standalone mode).
@@ -305,6 +306,14 @@ $ trivy server --listen localhost:8080 --token dummy
 $ trivy image --server http://localhost:8080 --token dummy alpine:3.10
 ```
 
+## Security considerations
+
+Clients analyze artifacts locally and upload analysis results, such as package lists, to the server's shared cache. The server uses these results for vulnerability scanning without receiving the original artifact contents. All clients with access to the server must therefore be trusted to submit accurate analysis results.
+
+The server token controls access to both the scanning and cache APIs. It does not provide per-client permissions or tenant isolation: clients with access can write and delete shared cache entries, affecting scans performed by other clients. Use separate server instances and separate cache storage for mutually untrusted clients, including when using a Redis cache backend.
+
+The server listens on `localhost:4954` by default. When exposing it to other hosts, configure `--token` and restrict network access to trusted clients. Protect connections with HTTPS through a TLS-terminating reverse proxy or an equivalent secure transport, since the server itself serves HTTP.
+
 ## Endpoints
 
 ### Health
@@ -343,3 +352,4 @@ Returns the `200 OK` status if the request was successful.
 
 [^1]: The checks bundle is also downloaded on the client side.
 [^2]: The scan result with masked secrets is sent to the server
+[^3]: See [Cryptographic Asset Scanning](../../scanner/crypto.md#clientserver-mode).

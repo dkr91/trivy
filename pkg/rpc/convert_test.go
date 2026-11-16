@@ -7,11 +7,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	dbTypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy-db/pkg/vulnsrc/vulnerability"
+	"github.com/aquasecurity/trivy/internal/cryptotest"
+	"github.com/aquasecurity/trivy/pkg/digest"
 	ftypes "github.com/aquasecurity/trivy/pkg/fanal/types"
 	"github.com/aquasecurity/trivy/pkg/types"
 	"github.com/aquasecurity/trivy/rpc/common"
@@ -65,6 +68,13 @@ func TestConvertToRpcPkgs(t *testing.T) {
 						Identifier: ftypes.PkgIdentifier{
 							UID: "01",
 						},
+						Modularitylabel: "nodejs:12:8020020200707141642:2c8dfa1c",
+						BuildInfo: &ftypes.BuildInfo{
+							ContentSets: []string{"rhel-8-for-x86_64-baseos-rpms"},
+							Nvr:         "ubi8-container-8.3-227",
+							Arch:        "x86_64",
+						},
+						InstalledFiles: []string{"/usr/bin/binary"},
 					},
 				},
 			},
@@ -103,6 +113,71 @@ func TestConvertToRpcPkgs(t *testing.T) {
 					Identifier: &common.PkgIdentifier{
 						Uid: "01",
 					},
+					Modularitylabel: "nodejs:12:8020020200707141642:2c8dfa1c",
+					BuildInfo: &common.BuildInfo{
+						ContentSets: []string{"rhel-8-for-x86_64-baseos-rpms"},
+						Nvr:         "ubi8-container-8.3-227",
+						Arch:        "x86_64",
+					},
+					InstalledFiles: []string{"/usr/bin/binary"},
+				},
+			},
+		},
+		{
+			name: "package without build info and repository",
+			args: args{
+				pkgs: []ftypes.Package{
+					{
+						Name:    "binary",
+						Version: "1.2.3",
+					},
+				},
+			},
+			want: []*common.Package{
+				{
+					Name:    "binary",
+					Version: "1.2.3",
+					Layer:   &common.Layer{},
+				},
+			},
+		},
+		{
+			name: "package with several digests",
+			args: args{
+				pkgs: []ftypes.Package{
+					{
+						Name:    "binary",
+						Version: "1.2.3",
+						Digest:  "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+						Digests: []digest.SourcedDigest{
+							{
+								Digest: "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+								Source: digest.SourceRPMSigMD5,
+							},
+							{
+								Digest: "sha256:cf7b0f1d1a1e9b3e5b6b7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3",
+								Source: digest.SourceFileContent,
+							},
+						},
+					},
+				},
+			},
+			want: []*common.Package{
+				{
+					Name:    "binary",
+					Version: "1.2.3",
+					Layer:   &common.Layer{},
+					Digest:  "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+					Digests: []*common.PackageDigest{
+						{
+							Digest: "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+							Source: "rpm-sigmd5",
+						},
+						{
+							Digest: "sha256:cf7b0f1d1a1e9b3e5b6b7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3",
+							Source: "file-content",
+						},
+					},
 				},
 			},
 		},
@@ -125,6 +200,7 @@ func TestConvertFromRpcPkgs(t *testing.T) {
 		want []ftypes.Package
 	}{
 		{
+			name: "rpm package with modularity label and build info",
 			args: args{
 				rpcPkgs: []*common.Package{
 					{
@@ -158,6 +234,13 @@ func TestConvertFromRpcPkgs(t *testing.T) {
 						Identifier: &common.PkgIdentifier{
 							Uid: "01",
 						},
+						Modularitylabel: "nodejs:12:8020020200707141642:2c8dfa1c",
+						BuildInfo: &common.BuildInfo{
+							ContentSets: []string{"rhel-8-for-x86_64-baseos-rpms"},
+							Nvr:         "ubi8-container-8.3-227",
+							Arch:        "x86_64",
+						},
+						InstalledFiles: []string{"/usr/bin/binary"},
 					},
 				},
 			},
@@ -187,16 +270,25 @@ func TestConvertFromRpcPkgs(t *testing.T) {
 						Digest: "sha256:6a428f9f83b0a29f1fdd2ccccca19a9bab805a925b8eddf432a5a3d3da04afbc",
 						DiffID: "sha256:39982b2a789afc156fff00c707d0ff1c6ab4af8f1666a8df4787714059ce24e7",
 					},
+					// The peer sent the legacy field only, and it is passed through as such.
 					Digest:       "SHA1:901a7b55410321c4d35543506cff2a8613ef5aa2",
 					Relationship: ftypes.RelationshipIndirect,
 					Indirect:     true,
 					Identifier: ftypes.PkgIdentifier{
 						UID: "01",
 					},
+					Modularitylabel: "nodejs:12:8020020200707141642:2c8dfa1c",
+					BuildInfo: &ftypes.BuildInfo{
+						ContentSets: []string{"rhel-8-for-x86_64-baseos-rpms"},
+						Nvr:         "ubi8-container-8.3-227",
+						Arch:        "x86_64",
+					},
+					InstalledFiles: []string{"/usr/bin/binary"},
 				},
 			},
 		},
 		{
+			name: "deb package with maintainer and repository",
 			args: args{
 				rpcPkgs: []*common.Package{
 					{
@@ -272,6 +364,87 @@ func TestConvertFromRpcPkgs(t *testing.T) {
 					Maintainer: "alice@example.com",
 					Repository: ftypes.PackageRepository{
 						Class: ftypes.RepositoryClassThirdParty,
+					},
+				},
+			},
+		},
+		{
+			// The legacy field is passed through as received, even when it is empty.
+			name: "digests without the legacy field",
+			args: args{
+				rpcPkgs: []*common.Package{
+					{
+						Name:    "binary",
+						Version: "1.2.3",
+						Digests: []*common.PackageDigest{
+							{
+								Digest: "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+								Source: "rpm-sigmd5",
+							},
+						},
+					},
+				},
+			},
+			want: []ftypes.Package{
+				{
+					Name:    "binary",
+					Version: "1.2.3",
+					Digests: []digest.SourcedDigest{
+						{
+							Digest: "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+							Source: digest.SourceRPMSigMD5,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "package with several digests",
+			args: args{
+				rpcPkgs: []*common.Package{
+					{
+						Name:    "binary",
+						Version: "1.2.3",
+						Digest:  "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+						Digests: []*common.PackageDigest{
+							{
+								Digest: "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+								Source: "rpm-sigmd5",
+							},
+							{
+								Digest: "sha256:cf7b0f1d1a1e9b3e5b6b7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3",
+								Source: "file-content",
+							},
+							{
+								// An empty source on the wire means the peer did not know it.
+								Digest: "sha256:1e2d3c4b5a69788796a5b4c3d2e1f00918273645546372819a0b1c2d3e4f5061",
+							},
+							{
+								// An entry without a value is dropped rather than stored.
+								Source: "file-content",
+							},
+						},
+					},
+				},
+			},
+			want: []ftypes.Package{
+				{
+					Name:    "binary",
+					Version: "1.2.3",
+					Digest:  "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+					Digests: []digest.SourcedDigest{
+						{
+							Digest: "md5:e35b7bd7c7a54c73d4b7f7e18f4a1e4f",
+							Source: digest.SourceRPMSigMD5,
+						},
+						{
+							Digest: "sha256:cf7b0f1d1a1e9b3e5b6b7e8f9a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3",
+							Source: digest.SourceFileContent,
+						},
+						{
+							Digest: "sha256:1e2d3c4b5a69788796a5b4c3d2e1f00918273645546372819a0b1c2d3e4f5061",
+							Source: digest.SourceUnknown,
+						},
 					},
 				},
 			},
@@ -591,6 +764,20 @@ func TestConvertFromRPCResults(t *testing.T) {
 								},
 							},
 						},
+						CryptoAssets: []*common.CryptoAsset{
+							{
+								Kind: string(ftypes.CryptoKindAlgorithm),
+								Identity: &common.CryptoIdentity{
+									Method: string(ftypes.CryptoMethodOID),
+									Value:  "1.2.840.113549.1.1.1",
+								},
+								Name: "RSA",
+								Algorithm: &common.CryptoAlgorithm{
+									Primitive: string(ftypes.CryptoPrimitiveUnknown),
+								},
+								FilePath: "/etc/example-algorithm.pem",
+							},
+						},
 					},
 				},
 			},
@@ -640,6 +827,9 @@ func TestConvertFromRPCResults(t *testing.T) {
 							},
 							Custom: customJSON,
 						},
+					},
+					CryptoAssets: []ftypes.CryptoAsset{
+						cryptotest.AlgorithmAsset(),
 					},
 				},
 			},
@@ -1503,6 +1693,260 @@ func TestConvertFromRPCLicenseFiles(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, ConvertFromRPCLicenseFiles(tt.licenseFiles))
+		})
+	}
+}
+
+func TestConvertCryptoAssets(t *testing.T) {
+	layer := ftypes.Layer{
+		Digest: "sha256:154ad0735c360b212b167f424d33a62305770a1fcfb6363882f5c436cfbd9812",
+		DiffID: "sha256:b2a1a2d80bf0c747a4f6b0ca6af5eef23f043fcdb1ed4f3a3e750aef2dc68079",
+	}
+	// DSA is identified by several parameters.
+	algorithm := cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(asset *ftypes.CryptoAsset) {
+		asset.Name = "DSA-2048"
+		asset.Identity.Value = "1.2.840.10040.4.1"
+		asset.Identity.Parameters = "key-size=2048,subgroup-size=256"
+		asset.Algorithm.Family = "DSA"
+		asset.Algorithm.Primitive = ftypes.CryptoPrimitiveSignature
+		asset.Layer = layer
+	}))
+
+	tests := []struct {
+		name  string
+		asset ftypes.CryptoAsset
+	}{
+		{
+			name: "certificate",
+			asset: cryptotest.CertificateAsset(cryptotest.WithMutate(func(asset *ftypes.CryptoAsset) {
+				asset.Encoding = ftypes.CryptoEncodingDER
+				asset.Keystore = ftypes.CryptoKeystorePKCS12
+				asset.Certificate.NotBefore = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+				asset.Certificate.NotAfter = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+				asset.Certificate.KeyUsage = []string{"digitalSignature"}
+				asset.Certificate.ExtendedKeyUsage = []string{"serverAuth"}
+				asset.Certificate.DNSNames = []string{"example.test"}
+				asset.Certificate.EmailAddresses = []string{"admin@example.test"}
+				asset.Certificate.IPAddresses = []string{"192.0.2.1"}
+				asset.Certificate.URIs = []string{"https://example.test"}
+				asset.Certificate.BasicConstraintsValid = true
+				asset.Certificate.IsCA = true
+				asset.Certificate.MaxPathLenZero = true
+				asset.AssetID = "1e7b3d9c04a65f28"
+				asset.Relationships = []ftypes.CryptoRelationship{
+					{
+						Type:         ftypes.CryptoRelationshipSignedWith,
+						RelatedAsset: cryptotest.AlgorithmDescriptor(),
+					},
+					{
+						Type:         ftypes.CryptoRelationshipContains,
+						RelatedAsset: cryptotest.PublicKeyDescriptor(),
+					},
+				}
+				asset.Layer = layer
+			})),
+		},
+		{
+			name: "public key",
+			asset: cryptotest.PublicKeyAsset(cryptotest.WithMutate(func(asset *ftypes.CryptoAsset) {
+				asset.Key.Curve = "P-256"
+				asset.Relationships = []ftypes.CryptoRelationship{
+					{
+						Type:         ftypes.CryptoRelationshipUsedWith,
+						RelatedAsset: algorithm.Descriptor(),
+					},
+				}
+				asset.Layer = layer
+			})),
+		},
+		{
+			name:  "encrypted private key",
+			asset: cryptotest.EncryptedPrivateKeyAsset(),
+		},
+		{
+			name:  "algorithm",
+			asset: algorithm,
+		},
+		{
+			// A NIST category of zero is a value of its own, unlike an unset level.
+			name: "algorithm with security levels",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(asset *ftypes.CryptoAsset) {
+				asset.Name = "RSA-2048"
+				asset.Identity.Parameters = "key-size=2048"
+				asset.Algorithm.ClassicalSecurityLevel = new(112)
+				asset.Algorithm.NISTQuantumSecurityLevel = new(0)
+				asset.Layer = layer
+			})),
+		},
+		{
+			name: "algorithm with only a NIST category",
+			asset: cryptotest.AlgorithmAsset(cryptotest.WithMutate(func(asset *ftypes.CryptoAsset) {
+				asset.Name = "ML-DSA-65"
+				asset.Identity.Value = "2.16.840.1.101.3.4.3.18"
+				asset.Algorithm.Family = "ML-DSA"
+				asset.Algorithm.Primitive = ftypes.CryptoPrimitiveSignature
+				asset.Algorithm.NISTQuantumSecurityLevel = new(3)
+				asset.Layer = layer
+			})),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, tt.asset.Validate())
+			assets := []ftypes.CryptoAsset{tt.asset}
+
+			// The assets travel through the wire encoding, which drops a zero that an unset
+			// field cannot be told apart from.
+			var received []*common.CryptoAsset
+			for _, sent := range ConvertToRPCCryptoAssets(assets) {
+				wire, err := proto.Marshal(sent)
+				require.NoError(t, err)
+				var asset common.CryptoAsset
+				require.NoError(t, proto.Unmarshal(wire, &asset))
+				received = append(received, &asset)
+			}
+			assert.Equal(t, assets, ConvertFromRPCCryptoAssets(received))
+		})
+	}
+}
+
+func TestConvertCryptoFindings(t *testing.T) {
+	tests := []struct {
+		name    string
+		finding types.CryptoFinding
+	}{
+		{
+			name: "SHA-1 signature",
+			finding: types.CryptoFinding{
+				RuleID:   "CRYPTO-0001",
+				Title:    "SHA-1 certificate signature",
+				Severity: "MEDIUM",
+				AssetID:  "1e7b3d9c04a65f28",
+				Evidence: types.CryptoEvidence{
+					SignatureAlgorithm:    "RSA-PKCS1-1.5-SHA-1",
+					SignatureAlgorithmOID: "1.2.840.113549.1.1.5",
+				},
+			},
+		},
+		{
+			name: "small RSA key",
+			finding: types.CryptoFinding{
+				RuleID:   "CRYPTO-0002",
+				Title:    "Small RSA key",
+				Severity: "HIGH",
+				AssetID:  "8c2f0e5a91d34b76",
+				Evidence: types.CryptoEvidence{
+					KeySize: 1024,
+				},
+			},
+		},
+		{
+			name: "weak elliptic curve",
+			finding: types.CryptoFinding{
+				RuleID:   "CRYPTO-0003",
+				Title:    "Weak elliptic curve",
+				Severity: "HIGH",
+				AssetID:  "5d90a2c7e13f6b48",
+				Evidence: types.CryptoEvidence{
+					Curve:                  "P-192",
+					ClassicalSecurityLevel: new(80),
+				},
+			},
+		},
+		{
+			name: "expired certificate",
+			finding: types.CryptoFinding{
+				RuleID:   "CRYPTO-0004",
+				Title:    "Expired certificate",
+				Severity: "MEDIUM",
+				AssetID:  "1e7b3d9c04a65f28",
+				Evidence: types.CryptoEvidence{
+					NotAfter: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := []types.CryptoFinding{tt.finding}
+
+			var received []*common.CryptoFinding
+			for _, sent := range ConvertToRPCCryptoFindings(findings) {
+				wire, err := proto.Marshal(sent)
+				require.NoError(t, err)
+				var finding common.CryptoFinding
+				require.NoError(t, proto.Unmarshal(wire, &finding))
+				received = append(received, &finding)
+			}
+			assert.Equal(t, findings, ConvertFromRPCCryptoFindings(received))
+		})
+	}
+}
+
+func TestConvertFromRPCCryptoAssets(t *testing.T) {
+	tests := []struct {
+		name   string
+		assets []*common.CryptoAsset
+		want   []ftypes.CryptoAsset
+	}{
+		{
+			name: "empty asset",
+			assets: []*common.CryptoAsset{
+				{},
+			},
+			want: []ftypes.CryptoAsset{
+				{},
+			},
+		},
+		{
+			name: "invalid relationship target",
+			assets: []*common.CryptoAsset{
+				{
+					Kind: string(ftypes.CryptoKindAlgorithm),
+					Identity: &common.CryptoIdentity{
+						Method: string(ftypes.CryptoMethodOID),
+						Value:  "1.2.840.113549.1.1.1",
+					},
+					Algorithm: &common.CryptoAlgorithm{
+						Primitive: string(ftypes.CryptoPrimitiveUnknown),
+					},
+					Relationships: []*common.CryptoRelationship{
+						{
+							Type: string(ftypes.CryptoRelationshipUsedWith),
+							RelatedAsset: &common.CryptoDescriptor{
+								Kind:    string(ftypes.CryptoKindKey),
+								KeyType: string(ftypes.CryptoKeyTypePublic),
+								Identity: &common.CryptoIdentity{
+									Method: string(ftypes.CryptoMethodSPKISHA256),
+									Value:  "not-a-digest",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []ftypes.CryptoAsset{
+				{
+					CryptoAssetInfo: ftypes.CryptoAssetInfo{
+						Kind: ftypes.CryptoKindAlgorithm,
+						Identity: ftypes.CryptoIdentity{
+							Method: ftypes.CryptoMethodOID,
+							Value:  "1.2.840.113549.1.1.1",
+						},
+						Algorithm: &ftypes.CryptoAlgorithm{
+							Primitive: ftypes.CryptoPrimitiveUnknown,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, ConvertFromRPCCryptoAssets(tt.assets))
 		})
 	}
 }

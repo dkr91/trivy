@@ -65,7 +65,7 @@ func (s *LineScanner) LineNum(prevNum int) int {
 func parsePattern(target string) (packagename, protocol, version string, err error) {
 	capture := yarnPatternRegexp.FindStringSubmatch(target)
 	if len(capture) < 3 {
-		return "", "", "", xerrors.New("not package format")
+		return "", "", "", xerrors.New("not a package format")
 	}
 	for i, group := range yarnPatternRegexp.SubexpNames() {
 		switch group {
@@ -96,7 +96,7 @@ func parsePackagePatterns(target string) (packagename, protocol string, patterns
 func getVersion(target string) (version string, err error) {
 	capture := yarnVersionRegexp.FindStringSubmatch(target)
 	if len(capture) < 2 {
-		return "", xerrors.Errorf("failed to parse version: '%s", target)
+		return "", xerrors.Errorf("failed to parse version: %q", target)
 	}
 	return capture[len(capture)-1], nil
 }
@@ -104,7 +104,7 @@ func getVersion(target string) (version string, err error) {
 func getDependency(target string) (name, version string, err error) {
 	capture := yarnDependencyRegexp.FindStringSubmatch(target)
 	if len(capture) < 3 {
-		return "", "", xerrors.New("not dependency")
+		return "", "", xerrors.New("not a dependency")
 	}
 	if !validProtocol(capture[2]) {
 		return "", "", nil
@@ -197,17 +197,23 @@ func (p *Parser) parseBlock(block []byte, lineNum int) (lib Library, deps []stri
 			continue
 		}
 
+		// yarn v1 and Berry indent block fields by two spaces and nested keys by four or more
+		indent := len(line) - len(strings.TrimLeft(line, " "))
 		line = strings.TrimPrefix(strings.TrimSpace(line), "\"")
 
 		switch {
-		case strings.HasPrefix(line, "version"):
+		case indent == 2 && strings.HasPrefix(line, "version"):
 			if lib.Version, err = getVersion(line); err != nil {
 				skipBlock = true
 			}
 			continue
-		case strings.HasPrefix(line, "dependencies:"):
+		case indent == 2 && strings.HasPrefix(line, "dependencies:"):
 			// start dependencies block
 			deps = parseDependencies(scanner)
+			continue
+		case indent != 0:
+			// only the block header holds package patterns, other fields and nested keys
+			// such as the ones under dependenciesMeta or bin are skipped
 			continue
 		}
 

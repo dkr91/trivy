@@ -36,12 +36,18 @@ trivy convert [flags] RESULT_JSON
                                     (default "table")
   -h, --help                       help for convert
       --ignore-policy string       specify the Rego file path to evaluate each vulnerability
-      --ignorefile string          specify .trivyignore file (default ".trivyignore")
+      --ignorefile string          specify .trivyignore file (empty string disables loading) (default ".trivyignore")
       --list-all-pkgs              output all packages in the JSON report regardless of vulnerability (default true)
   -o, --output string              output file name
       --output-plugin-arg string   [EXPERIMENTAL] output plugin arguments
       --report string              specify a report format for the output (allowed values: all,summary) (default "all")
-      --scanners strings           List of scanners included when generating the json report. Used only for rendering the summary table. (allowed values: vuln,misconfig,secret,license)
+      --scanners strings           List of scanners included when generating the json report. Used only for rendering the summary table.
+                                   Allowed values:
+                                     - vuln
+                                     - misconfig
+                                     - secret
+                                     - license
+                                     - crypto
   -s, --severity strings           severities of security issues to be displayed
                                    Allowed values:
                                      - UNKNOWN
@@ -60,7 +66,7 @@ trivy convert [flags] RESULT_JSON
 ```
       --cacert string             Path to PEM-encoded CA certificate file
       --cache-dir string          cache directory (default "/path/to/cache")
-  -c, --config string             config path (default "trivy.yaml")
+  -c, --config string             config path (empty string disables loading) (default "trivy.yaml")
   -d, --debug                     debug mode
       --generate-default-config   write the default config to trivy-default.yaml
       --insecure                  allow insecure server connections

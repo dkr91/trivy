@@ -68,6 +68,7 @@ nav:
                   - Contribute Checks: guide/scanner/misconfiguration/custom/contribute-checks.md
           - Secret: guide/scanner/secret.md
           - License: guide/scanner/license.md
+          - Cryptographic Asset: guide/scanner/crypto.md
       - Coverage:
           - Overview: guide/coverage/index.md
           - OS:
@@ -211,6 +212,7 @@ nav:
           - Modes:
               - Standalone: guide/references/modes/standalone.md
               - Client/Server: guide/references/modes/client-server.md
+          - Compatibility and Stability: guide/references/compatibility.md
           - Troubleshooting: guide/references/troubleshooting.md
           - Terminology: guide/references/terminology.md
           - Abbreviations: guide/references/abbreviations.md

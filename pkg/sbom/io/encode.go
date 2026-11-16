@@ -80,6 +80,7 @@ func (e *Encoder) Encode(report types.Report) (*core.BOM, error) {
 	for _, result := range report.Results {
 		e.encodeResult(root, report.Metadata, result)
 	}
+	e.encodeCryptoAssets(report.Results)
 
 	// Components that do not have their own dependencies MUST be declared as empty elements within the graph.
 	if _, ok := e.bom.Relationships()[root.ID()]; !ok {
@@ -287,6 +288,53 @@ func (e *Encoder) encodePackages(parent *core.Component, result types.Result) {
 	}
 }
 
+// encodeCryptoAssets turns cryptographic assets into components, one per identity. The
+// same asset found in several files or layers becomes one component carrying an
+// occurrence per source, because identity is derived from content and does not depend on
+// where the asset was found.
+//
+// TODO: drop a relationship whose target is missing from the BOM. Nothing removes an
+// asset today, so every target is present; filtering trust store bundles will change that.
+func (e *Encoder) encodeCryptoAssets(results types.Results) {
+	// Assets are merged by identity across results, not within one of them.
+	cryptoAssets := lo.FlatMap(results, func(result types.Result, _ int) []ftypes.CryptoAsset {
+		return lo.Ternary(result.Class == types.ClassCrypto, result.CryptoAssets, nil)
+	})
+
+	// Sorting once puts both the components and the occurrences of each of them in a fixed
+	// order.
+	slices.SortStableFunc(cryptoAssets, ftypes.CompareCryptoAssets)
+
+	descriptions := make(map[ftypes.CryptoDescriptor]ftypes.CryptoAssetInfo)
+	occurrences := make(map[ftypes.CryptoDescriptor][]core.Occurrence)
+	descriptors := make([]ftypes.CryptoDescriptor, 0, len(cryptoAssets))
+	for _, asset := range cryptoAssets {
+		descriptor := asset.Descriptor()
+		if _, described := descriptions[descriptor]; !described {
+			descriptions[descriptor] = asset.CryptoAssetInfo
+			descriptors = append(descriptors, descriptor)
+		}
+
+		// An occurrence states where the asset was found and nothing about how it was
+		// stored there, so one file that holds the material twice states it once. The same
+		// path in several layers gives an occurrence per layer.
+		occurrence := core.Occurrence{
+			Location:    asset.FilePath,
+			LayerDiffID: asset.Layer.DiffID,
+		}
+		if !slices.Contains(occurrences[descriptor], occurrence) {
+			occurrences[descriptor] = append(occurrences[descriptor], occurrence)
+		}
+	}
+
+	for _, descriptor := range descriptors {
+		e.bom.AddCryptoComponent(&core.CryptoComponent{
+			Asset:       descriptions[descriptor],
+			Occurrences: occurrences[descriptor],
+		})
+	}
+}
+
 // reuseExistingBOM preserves the original SBOM structure and only updates the vulnerabilities section
 // with newly detected vulnerabilities. This method handles two use cases:
 //  1. SBOM scanning (CycloneDX): When scanning an existing SBOM file to refresh vulnerability data while
@@ -428,6 +476,10 @@ func (*Encoder) component(result types.Result, pkg ftypes.Package) *core.Compone
 			Name:  core.PropertyLayerDiffID,
 			Value: pkg.Layer.DiffID,
 		},
+		{
+			Name:  core.PropertyRepositoryClass,
+			Value: string(pkg.Repository.Class),
+		},
 	}
 
 	// Fill Red Hat specific properties
@@ -454,11 +506,12 @@ func (*Encoder) component(result types.Result, pkg ftypes.Package) *core.Compone
 	}
 
 	var files []core.File
-	if pkg.FilePath != "" || pkg.Digest != "" {
+	if digests := pkg.SourcedDigests(); pkg.FilePath != "" || len(digests) > 0 {
 		files = append(files, core.File{
 			Path:    pkg.FilePath,
-			Digests: lo.Ternary(pkg.Digest != "", []digest.Digest{pkg.Digest}, nil),
+			Digests: digests,
 		})
+		properties = append(properties, sourcedDigestProperties(digests)...)
 	}
 
 	// TODO(refactor): simplify the list of conditions
@@ -528,4 +581,20 @@ func filterProperties(props []core.Property) []core.Property {
 	return lo.Filter(props, func(property core.Property, _ int) bool {
 		return property.Value != "" && (property.Name != core.PropertySrcEpoch || property.Value != "0")
 	})
+}
+
+// sourcedDigestProperties returns a property per digest that has a source, recording the source,
+// which neither CycloneDX hashes nor SPDX checksums can hold.
+func sourcedDigestProperties(digests []digest.SourcedDigest) []core.Property {
+	var props []core.Property
+	for _, d := range digests {
+		if d.Digest == "" || d.Source == "" {
+			continue
+		}
+		props = append(props, core.Property{
+			Name:  core.PropertySourcedDigest,
+			Value: d.Source.String() + ":" + d.Digest.String(),
+		})
+	}
+	return props
 }

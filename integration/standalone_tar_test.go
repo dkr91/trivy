@@ -5,6 +5,7 @@ package integration
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -26,10 +27,12 @@ func TestTar(t *testing.T) {
 		Severity          []string
 		IgnoreIDs         []string
 		Format            types.Format
+		Scanners          []string
 		Input             string
 		SkipDirs          []string
 		SkipFiles         []string
 		DetectionPriority ftypes.DetectionPriority
+		ExitCode          int
 	}
 	tests := []struct {
 		name   string
@@ -396,6 +399,26 @@ func TestTar(t *testing.T) {
 			},
 			golden: goldenFluentdGems,
 		},
+		{
+			name: "cryptographic assets with CycloneDX format",
+			args: args{
+				Format:   types.FormatCycloneDX,
+				Scanners: []string{"crypto"},
+				Input:    "testdata/fixtures/images/crypto-v3.tar.gz",
+				// Findings do not affect the exit code of CycloneDX output.
+				ExitCode: 1,
+			},
+			golden: goldenCryptoCDX,
+		},
+		{
+			name: "cryptographic assets with JSON format",
+			args: args{
+				Format:   types.FormatJSON,
+				Scanners: []string{"crypto"},
+				Input:    "testdata/fixtures/images/crypto-v3.tar.gz",
+			},
+			golden: goldenCryptoJSON,
+		},
 	}
 
 	// Set up testing DB
@@ -423,6 +446,9 @@ func TestTar(t *testing.T) {
 			if len(tt.args.Severity) != 0 {
 				osArgs = append(osArgs, "--severity", strings.Join(tt.args.Severity, ","))
 			}
+			if len(tt.args.Scanners) != 0 {
+				osArgs = append(osArgs, "--scanners", strings.Join(tt.args.Scanners, ","))
+			}
 			if len(tt.args.IgnoreIDs) != 0 {
 				trivyIgnore := ".trivyignore"
 				err := os.WriteFile(trivyIgnore, []byte(strings.Join(tt.args.IgnoreIDs, "\n")), 0o444)
@@ -447,6 +473,10 @@ func TestTar(t *testing.T) {
 
 			if tt.args.DetectionPriority != "" {
 				osArgs = append(osArgs, "--detection-priority", string(tt.args.DetectionPriority))
+			}
+
+			if tt.args.ExitCode != 0 {
+				osArgs = append(osArgs, "--exit-code", strconv.Itoa(tt.args.ExitCode))
 			}
 
 			// Run Trivy

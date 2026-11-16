@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ type csArgs struct {
 	Command             string
 	RemoteAddrOption    string
 	Format              types.Format
+	Scanners            []string
 	TemplatePath        string
 	IgnoreUnfixed       bool
 	Severity            []string
@@ -327,6 +329,24 @@ func TestClientServer(t *testing.T) {
 			},
 			golden: goldenTestRepo,
 		},
+		{
+			name: "cryptographic assets with CycloneDX format",
+			args: csArgs{
+				Format:   types.FormatCycloneDX,
+				Scanners: []string{"crypto"},
+				Input:    "testdata/fixtures/images/crypto-v3.tar.gz",
+			},
+			golden: goldenCryptoCDX,
+		},
+		{
+			name: "cryptographic assets with JSON format",
+			args: csArgs{
+				Format:   types.FormatJSON,
+				Scanners: []string{"crypto"},
+				Input:    "testdata/fixtures/images/crypto-v3.tar.gz",
+			},
+			golden: goldenCryptoJSON,
+		},
 	}
 
 	addr, cacheDir := setup(t, setupOptions{})
@@ -339,7 +359,7 @@ func TestClientServer(t *testing.T) {
 				osArgs = append(osArgs, "--secret-config", tt.args.secretConfig)
 			}
 
-			runTest(t, osArgs, tt.golden, types.FormatJSON, runOptions{
+			runTest(t, osArgs, tt.golden, cmp.Or(tt.args.Format, types.FormatJSON), runOptions{
 				override: overrideFuncs(overrideUID, overrideFingerprint, overrideServerInfo, tt.override),
 				fakeUUID: "3ff14136-e09f-4df9-80ea-%012d",
 			})
@@ -721,6 +741,10 @@ func setupClient(t *testing.T, c csArgs, addr, cacheDir string) []string {
 		}
 	} else {
 		osArgs = append(osArgs, "--format", "json")
+	}
+
+	if len(c.Scanners) != 0 {
+		osArgs = append(osArgs, "--scanners", strings.Join(c.Scanners, ","))
 	}
 
 	if !c.ListAllPackages {

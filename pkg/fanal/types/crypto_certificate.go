@@ -10,17 +10,15 @@ const (
 	CryptoCertificateFormatX509 CryptoCertificateFormat = "X.509"
 )
 
-// CryptoCertificate contains certificate-specific metadata. Format identifies
-// the certificate structure, while Encoding identifies whether its source
-// representation was PEM or DER.
+// CryptoCertificate contains certificate-specific metadata.
 type CryptoCertificate struct {
-	Subject               string                  `json:",omitempty"`
-	Issuer                string                  `json:",omitempty"`
+	Subject string `json:",omitempty"`
+	Issuer  string `json:",omitempty"`
+	// SerialNumber is the serial number written in hexadecimal.
 	SerialNumber          string                  `json:",omitempty"`
 	NotBefore             time.Time               `json:",omitzero"`
 	NotAfter              time.Time               `json:",omitzero"`
 	Format                CryptoCertificateFormat `json:",omitempty"`
-	Encoding              CryptoEncoding          `json:",omitempty"`
 	KeyUsage              []string                `json:",omitempty"`
 	ExtendedKeyUsage      []string                `json:",omitempty"`
 	DNSNames              []string                `json:",omitempty"`
@@ -32,7 +30,7 @@ type CryptoCertificate struct {
 	// MaxPathLen is the maximum number of non-self-issued intermediate
 	// certificates. Zero with MaxPathLenZero unset means no constraint was
 	// specified; negative sentinel values are not retained in this model.
-	MaxPathLen int `json:",omitempty"`
+	MaxPathLen int64 `json:",omitempty"`
 	// MaxPathLenZero reports whether zero is an explicit maximum path length.
 	MaxPathLenZero bool `json:",omitempty"`
 }
