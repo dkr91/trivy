@@ -87,7 +87,7 @@ const (
 	ComplianceK8sPSSRestricted01 = Compliance("k8s-pss-restricted-0.1")
 	ComplianceAWSCIS12           = Compliance("aws-cis-1.2")
 	ComplianceAWSCIS14           = Compliance("aws-cis-1.4")
-	ComplianceDockerCIS160       = Compliance("docker-cis-1.6.0")
+	ComplianceDockerCIS180       = Compliance("docker-cis-1.8.0")
 	ComplianceEksCIS14           = Compliance("eks-cis-1.4")
 	ComplianceRke2CIS124         = Compliance("rke2-cis-1.24")
 
@@ -140,7 +140,7 @@ var (
 		ComplianceK8sPSSRestricted01,
 		ComplianceAWSCIS12,
 		ComplianceAWSCIS14,
-		ComplianceDockerCIS160,
+		ComplianceDockerCIS180,
 		ComplianceEksCIS14,
 		ComplianceRke2CIS124,
 	}

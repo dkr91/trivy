@@ -256,7 +256,7 @@ func NewImageCommand(globalFlags *flag.GlobalFlagGroup) *cobra.Command {
 	reportFlagGroup.ReportFormat = report
 
 	compliance := flag.ComplianceFlag.Clone()
-	compliance.Usage = fmt.Sprintf("%s (built-in compliance's: %s)", compliance.Usage, types.ComplianceDockerCIS160)
+	compliance.Usage = fmt.Sprintf("%s (built-in compliance's: %s)", compliance.Usage, types.ComplianceDockerCIS180)
 	reportFlagGroup.Compliance = compliance // override usage as the accepted values differ for each subcommand.
 
 	packageFlagGroup := flag.NewPackageFlagGroup()

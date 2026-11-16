@@ -284,6 +284,19 @@ func TestComplianceSpec_LoadFromDiskBundle(t *testing.T) {
 		assert.Equal(t, "test-spec-1.2", cs.Spec.ID)
 	})
 
+	t.Run("fall back to embedded spec when it is missing in the bundle", func(t *testing.T) {
+		cs, err := spec.GetComplianceSpec("docker-cis-1.8.0", filepath.Join("testdata", "testcache"))
+		require.NoError(t, err)
+		assert.Equal(t, "docker-cis-1.8.0", cs.Spec.ID)
+		assert.Equal(t, "1.8.0", cs.Spec.Version)
+		assert.Len(t, cs.Spec.Controls, 12)
+	})
+
+	t.Run("spec is neither in the bundle nor embedded", func(t *testing.T) {
+		_, err := spec.GetComplianceSpec("docker-cis-1.6.0", filepath.Join("testdata", "testcache"))
+		require.ErrorContains(t, err, "error retrieving compliance spec from bundle")
+	})
+
 	t.Run("load spec yaml unmarshal failure", func(t *testing.T) {
 		_, err := spec.GetComplianceSpec("invalid", filepath.Join("testdata", "testcache"))
 		require.ErrorContains(t, err, "spec yaml decode error")

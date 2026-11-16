@@ -280,7 +280,7 @@ scan:
 				"--scanners",
 				"license",
 				"--compliance",
-				"docker-cis-1.6.0",
+				"docker-cis-1.8.0",
 			},
 			want: want{
 				format: types.FormatTable,

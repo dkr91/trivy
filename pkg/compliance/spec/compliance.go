@@ -116,10 +116,18 @@ func GetComplianceSpec(specNameOrPath, cacheDir string) (ComplianceSpec, error) 
 		} else {
 			// load from bundle on disk
 			b, err = LoadFromBundle(cacheDir, specNameOrPath)
-			if err != nil {
+			switch {
+			case err == nil:
+				log.Debug("Compliance spec loaded from disk bundle", log.String("spec", specNameOrPath))
+			case compliance.GetSpec(specNameOrPath) != "":
+				// The bundle on disk may be older than the embedded checks
+				// and not include the spec yet, so fall back to the embedded one.
+				b = []byte(compliance.GetSpec(specNameOrPath))
+				log.Debug("Compliance spec not found in disk bundle, loaded from embedded library",
+					log.String("spec", specNameOrPath))
+			default:
 				return ComplianceSpec{}, err
 			}
-			log.Debug("Compliance spec loaded from disk bundle", log.String("spec", specNameOrPath))
 		}
 	}
 
