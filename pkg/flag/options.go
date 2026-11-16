@@ -479,7 +479,7 @@ func (o *Options) Align(f *Flags) error {
 		o.Scanners = scanners
 		o.ImageConfigScanners = nil
 		// TODO: define image-config-scanners in the spec
-		if o.Compliance.Spec.ID == types.ComplianceDockerCIS160 {
+		if o.Compliance.Spec.ID == types.ComplianceDockerCIS180 {
 			o.Scanners = types.Scanners{types.VulnerabilityScanner}
 			o.ImageConfigScanners = types.Scanners{
 				types.MisconfigScanner,

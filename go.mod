@@ -489,3 +489,5 @@ tool (
 	golang.org/x/tools/cmd/goyacc
 	sigs.k8s.io/kind
 )
+
+replace github.com/aquasecurity/trivy-checks => github.com/dkr91/trivy-checks v0.0.0-20261116103447-c0d176f750c6
