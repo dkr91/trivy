@@ -187,6 +187,18 @@ func ApplyLayers(layers []ftypes.BlobInfo) ftypes.ArtifactDetail {
 			nestedMap.SetByString(key, sep, assets)
 		}
 
+		// Apply file permissions
+		// An upper layer replaces the file of a lower layer, including its permission bits.
+		for _, perm := range layer.FilePermissions {
+			perm.Layer = ftypes.Layer{
+				Digest:    layer.Digest,
+				DiffID:    layer.DiffID,
+				CreatedBy: layer.CreatedBy,
+			}
+			key := fmt.Sprintf("%s/type:fileperm", perm.FilePath)
+			nestedMap.SetByString(key, sep, perm)
+		}
+
 		// Apply custom resources
 		for _, customResource := range layer.CustomResources {
 			key := fmt.Sprintf("%s/custom:%s", customResource.FilePath, customResource.Type)
@@ -209,6 +221,8 @@ func ApplyLayers(layers []ftypes.BlobInfo) ftypes.ArtifactDetail {
 			mergedLayer.CryptoAssets = append(mergedLayer.CryptoAssets, v...)
 		case ftypes.CustomResource:
 			mergedLayer.CustomResources = append(mergedLayer.CustomResources, v)
+		case ftypes.FilePermission:
+			mergedLayer.FilePermissions = append(mergedLayer.FilePermissions, v)
 		}
 		return nil
 	})

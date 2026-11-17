@@ -1,6 +1,7 @@
 package local
 
 import (
+	"io/fs"
 	"testing"
 	"time"
 
@@ -1637,11 +1638,50 @@ func TestScanner_Scan(t *testing.T) {
 							},
 						},
 					},
+					FilePermissions: []ftypes.FilePermission{
+						{
+							FilePath: "bin/busybox",
+							Mode:     0o755,
+						},
+						{
+							FilePath: "bin/bbsuid",
+							Mode:     fs.ModeSetuid | 0o755,
+						},
+					},
 				}))
 				return c
 			},
 			want: types.ScanResponse{
 				Results: types.Results{
+					{
+						Target: "/bin/bbsuid",
+						Class:  types.ClassConfig,
+						Type:   ftypes.FilePermissionConfig,
+						Misconfigurations: []types.DetectedMisconfiguration{
+							{
+								Namespace:   "trivy.image.fileperm",
+								Query:       "data.trivy.image.fileperm.deny",
+								Message:     "File '/bin/bbsuid' has the setuid bit set (mode urwxr-xr-x)",
+								Type:        "Container Image Filesystem Check",
+								ID:          "DS-0032",
+								AVDID:       "AVD-DS-0032",
+								Aliases:     []string{"DS032", "no-setuid-setgid-files"},
+								Title:       "setuid and setgid permissions should be removed in the image",
+								Description: "Files with the setuid or setgid bit run with the privileges of their owner or group. In a container image they can be abused for privilege escalation, so the bits should be removed unless they are required.",
+								Severity:    "HIGH",
+								Resolution:  "Remove the setuid and setgid bits from the files in the image, e.g. 'RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} + || true', and keep them only on the files that require them.",
+								Status:      types.MisconfStatusFailure,
+								PrimaryURL:  "https://www.cisecurity.org/benchmark/docker",
+								References:  []string{"https://www.cisecurity.org/benchmark/docker"},
+								CauseMetadata: ftypes.CauseMetadata{
+									Resource: "/bin/bbsuid",
+								},
+								Layer: ftypes.Layer{
+									DiffID: "sha256:5216338b40a7b96416b8b9858974bbe4acc3096ee60acbc4dfb1ee02aecceb10",
+								},
+							},
+						},
+					},
 					{
 						Target: "Dockerfile",
 						Class:  types.ClassConfig,

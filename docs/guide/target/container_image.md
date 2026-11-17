@@ -164,6 +164,16 @@ See https://avd.aquasec.com/misconfig/ds026
 !!! tip
     You can see how each layer is created with `docker history`.
 
+#### setuid and setgid files
+With `--image-config-scanners misconfig`, Trivy also checks the files of the image for the setuid and setgid bits (check ID `DS-0032`).
+Files with these bits run with the privileges of their owner or group and can be abused for privilege escalation.
+
+Trivy records the mode of the regular files in each layer and evaluates the merged filesystem.
+A file whose bits are removed in an upper layer (e.g. `RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +`), or which is deleted there, is not reported.
+Each affected file is reported as a separate target, e.g. `/usr/bin/passwd (file-permission)`.
+
+The check is mapped to control 4.8 of the `docker-cis-1.6.0` compliance spec.
+
 #### Disabled checks
 
 The following checks are disabled for this scan type due to known issues. See the linked issues for more details.

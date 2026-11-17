@@ -539,8 +539,10 @@ func disabledAnalyzers(opts flag.Options) []analyzer.Type {
 
 	// Do not perform misconfiguration scanning on container image config
 	// when it is not specified.
+	// The file permissions are only needed for the setuid/setgid check,
+	// which runs together with the misconfiguration scanning of the image config.
 	if !opts.ImageConfigScanners.Enabled(types.MisconfigScanner) {
-		analyzers = append(analyzers, analyzer.TypeHistoryDockerfile)
+		analyzers = append(analyzers, analyzer.TypeHistoryDockerfile, analyzer.TypeFilePermission)
 	}
 
 	// Skip executable file analysis if Rekor isn't a specified SBOM source.

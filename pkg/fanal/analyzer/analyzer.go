@@ -129,6 +129,12 @@ type StaticPathAnalyzer interface {
 	StaticPaths() []string
 }
 
+// MetadataOnlyAnalyzer is implemented by analyzers that only need the file metadata (e.g. the file mode).
+// The file is not opened for them and AnalysisInput.Content is nil.
+type MetadataOnlyAnalyzer interface {
+	MetadataOnly() bool
+}
+
 type Opener func() (xio.ReadSeekCloserAt, error)
 
 type AnalyzerGroup struct {
@@ -187,6 +193,7 @@ type AnalysisResult struct {
 	Secrets              []ftypes.Secret
 	Licenses             []ftypes.LicenseFile
 	CryptoAssets         []ftypes.CryptoAsset
+	FilePermissions      []ftypes.FilePermission
 	SystemInstalledFiles []string // A list of files installed by OS package manager
 
 	// Digests contains SHA-256 digests of unpackaged files
@@ -208,7 +215,7 @@ func NewAnalysisResult() *AnalysisResult {
 
 func (r *AnalysisResult) isEmpty() bool {
 	return lo.IsEmpty(r.OS) && r.Repository == nil && len(r.PackageInfos) == 0 && len(r.Applications) == 0 &&
-		len(r.Misconfigurations) == 0 && len(r.Secrets) == 0 && len(r.Licenses) == 0 && len(r.CryptoAssets) == 0 && len(r.SystemInstalledFiles) == 0 &&
+		len(r.Misconfigurations) == 0 && len(r.Secrets) == 0 && len(r.Licenses) == 0 && len(r.CryptoAssets) == 0 && len(r.FilePermissions) == 0 && len(r.SystemInstalledFiles) == 0 &&
 		r.BuildInfo == nil && len(r.Digests) == 0 && len(r.CustomResources) == 0
 }
 
@@ -274,6 +281,11 @@ func (r *AnalysisResult) Sort() {
 
 	// Cryptographic assets
 	slices.SortStableFunc(r.CryptoAssets, ftypes.CompareCryptoAssets)
+
+	// File permissions
+	sort.Slice(r.FilePermissions, func(i, j int) bool {
+		return r.FilePermissions[i].FilePath < r.FilePermissions[j].FilePath
+	})
 }
 
 func (r *AnalysisResult) Merge(newResult *AnalysisResult) {
@@ -309,6 +321,7 @@ func (r *AnalysisResult) Merge(newResult *AnalysisResult) {
 	r.Secrets = append(r.Secrets, newResult.Secrets...)
 	r.Licenses = append(r.Licenses, newResult.Licenses...)
 	r.CryptoAssets = append(r.CryptoAssets, newResult.CryptoAssets...)
+	r.FilePermissions = append(r.FilePermissions, newResult.FilePermissions...)
 	r.SystemInstalledFiles = append(r.SystemInstalledFiles, newResult.SystemInstalledFiles...)
 
 	if newResult.BuildInfo != nil {
@@ -489,6 +502,22 @@ func (ag AnalyzerGroup) AnalyzeFile(ctx context.Context, eg *errgroup.Group, lim
 		if !ag.filePatterns[a.Type()].Match(cleanPath) && !a.Required(cleanPath, info) {
 			continue
 		}
+
+		if m, ok := a.(MetadataOnlyAnalyzer); ok && m.MetadataOnly() {
+			ret, analyzeErr := ag.analyze(ctx, a, AnalysisInput{
+				Dir:      dir,
+				FilePath: filePath,
+				Info:     info,
+				Options:  opts,
+			})
+			if analyzeErr != nil {
+				ag.logger.Debug("Analysis error", log.Err(analyzeErr))
+				continue
+			}
+			result.Merge(ret)
+			continue
+		}
+
 		rc, err := opener()
 		if errors.Is(err, fs.ErrPermission) {
 			ag.logger.Debug("Permission error", log.FilePath(filePath))
