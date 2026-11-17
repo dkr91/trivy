@@ -5,6 +5,7 @@ import (
 	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/config/all"
 	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/crypto"
 	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/executable"
+	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/fileperm"
 	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/imgconf/apk"
 	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/imgconf/dockerfile"
 	_ "github.com/aquasecurity/trivy/pkg/fanal/analyzer/imgconf/secret"

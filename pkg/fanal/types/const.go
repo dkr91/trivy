@@ -197,6 +197,9 @@ const (
 	Cloud                 ConfigType = "cloud"
 	AzureARM              ConfigType = "azure-arm"
 	Ansible               ConfigType = "ansible"
+
+	// FilePermissionConfig is used for the setuid/setgid check on the files of container images
+	FilePermissionConfig ConfigType = "file-permission"
 )
 
 // Language-specific file names

@@ -113,13 +113,20 @@ func (s Service) Scan(ctx context.Context, targetName, artifactKey string, blobK
 		}
 	}
 
+	misconfs := mergeMisconfigurations(targetName, detail)
+	// The setuid/setgid check runs together with the misconfiguration scanning of the image config,
+	// which also enables the analyzer collecting the file permissions.
+	if options.ImageConfigScanners.Enabled(types.MisconfigScanner) {
+		misconfs = append(misconfs, setuidMisconfigurations(targetName, detail.FilePermissions)...)
+	}
+
 	target := types.ScanTarget{
 		Name:              targetName,
 		OS:                detail.OS,
 		Repository:        lo.Ternary(lo.IsEmpty(options.Distro), detail.Repository, nil),
 		Packages:          mergePkgs(detail.Packages, detail.ImageConfig.Packages, options),
 		Applications:      detail.Applications,
-		Misconfigurations: mergeMisconfigurations(targetName, detail),
+		Misconfigurations: misconfs,
 		Secrets:           mergeSecrets(targetName, detail),
 		Licenses:          detail.Licenses,
 		CryptoAssets:      detail.CryptoAssets,

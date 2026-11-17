@@ -115,6 +115,11 @@ const (
 	TypeExecutable Type = "executable"
 	TypeSBOM       Type = "sbom"
 
+	// ================
+	// File permissions
+	// ================
+	TypeFilePermission Type = "file-permission"
+
 	// ============
 	// Image Config
 	// ============
